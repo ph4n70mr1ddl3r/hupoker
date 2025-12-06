@@ -68,25 +68,59 @@ impl Connection {
         &mut self,
         table_id: game_engine::TableId,
         seat: u8,
-    ) -> Result<server::protocol::messages::TableState> {
+    ) -> Result<(server::protocol::messages::TableState, Vec<server::protocol::messages::HandState>)> {
         let join = Message::JoinTable { version: "1.0".to_string(), table_id, seat };
         self.send_message(&join).await?;
 
-        let response = self.receive_message().await?;
-        match response {
-            Message::TableState { version: _, table_id, seats, config, current_hand_id } => {
-                Ok(server::protocol::messages::TableState {
+        let mut hand_states = Vec::new();
+        let table_state = loop {
+            let response = self.receive_message().await?;
+            match response {
+                Message::TableState { version: _, table_id, seats, config, current_hand_id } => {
+                    break server::protocol::messages::TableState {
+                        table_id,
+                        seats,
+                        config,
+                        current_hand_id,
+                    };
+                }
+                Message::HandState {
+                    version: _,
+                    hand_id,
                     table_id,
-                    seats,
-                    config,
-                    current_hand_id,
-                })
+                    hole_cards,
+                    community_cards,
+                    pot,
+                    current_street,
+                    actions,
+                    player_stacks,
+                    button_position,
+                    last_action_time,
+                    acting_seat,
+                    time_remaining_ms,
+                } => {
+                    hand_states.push(server::protocol::messages::HandState {
+                        hand_id,
+                        table_id,
+                        hole_cards,
+                        community_cards,
+                        pot,
+                        current_street,
+                        actions,
+                        player_stacks,
+                        button_position,
+                        last_action_time,
+                        acting_seat,
+                        time_remaining_ms,
+                    });
+                }
+                Message::Error { code, message, .. } => {
+                    anyhow::bail!("join table error {}: {}", code, message);
+                }
+                _ => anyhow::bail!("unexpected response to JoinTable"),
             }
-            Message::Error { code, message, .. } => {
-                anyhow::bail!("join table error {}: {}", code, message);
-            }
-            _ => anyhow::bail!("unexpected response to JoinTable"),
-        }
+        };
+        Ok((table_state, hand_states))
     }
 
     pub async fn send_action(

@@ -145,7 +145,7 @@ async fn join_table_success() -> Result<()> {
     server_handle.abort();
     Ok(())
 }
- 
+
 #[tokio::test]
 async fn reconnection_flow() -> Result<()> {
     // Create a temporary listener to get a free port
@@ -175,7 +175,7 @@ async fn reconnection_flow() -> Result<()> {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Helper to connect and join a seat, returns reader, writer, and table_state JSON
+    // Helper to connect and join a seat, returns reader, writer, table_state JSON, and any hand_state messages received before table_state
     async fn connect_and_join(
         addr: std::net::SocketAddr,
         seat: u8,
@@ -183,6 +183,7 @@ async fn reconnection_flow() -> Result<()> {
         BufReader<tokio::net::tcp::OwnedReadHalf>,
         BufWriter<tokio::net::tcp::OwnedWriteHalf>,
         serde_json::Value,
+        Vec<serde_json::Value>,
     )> {
         let stream = TcpStream::connect(addr).await?;
         let (read_half, write_half) = stream.into_split();
@@ -218,22 +219,35 @@ async fn reconnection_flow() -> Result<()> {
         writer.write_all(line.as_bytes()).await?;
         writer.flush().await?;
 
-        // Read TableState response
-        let mut response = String::new();
-        reader.read_line(&mut response).await?;
-        eprintln!("DEBUG seat {}: received line: {}", seat, response.trim());
-        let table_state: serde_json::Value = serde_json::from_str(&response)?;
-        eprintln!("DEBUG seat {}: parsed type: {}", seat, table_state["type"]);
-        assert_eq!(table_state["type"], "table_state");
-        assert_eq!(table_state["table_id"], "table-0");
+        // Read messages until we get a table_state response
+        let mut table_state = None;
+        let mut hand_states = Vec::new();
+        while table_state.is_none() {
+            let mut response = String::new();
+            reader.read_line(&mut response).await?;
+            eprintln!("DEBUG seat {}: received line: {}", seat, response.trim());
+            let msg: serde_json::Value = serde_json::from_str(&response)?;
+            match msg["type"].as_str() {
+                Some("table_state") => {
+                    assert_eq!(msg["table_id"], "table-0");
+                    table_state = Some(msg);
+                }
+                Some("hand_state") => {
+                    hand_states.push(msg);
+                }
+                _ => panic!("unexpected message type: {}", msg["type"]),
+            }
+        }
 
-        Ok((reader, writer, table_state))
+        Ok((reader, writer, table_state.unwrap(), hand_states))
     }
 
     // Connect player 0
-    let (mut reader0, mut writer0, _table_state0) = connect_and_join(addr, 0).await?;
+    let (mut reader0, mut writer0, _table_state0, _hand_states0) =
+        connect_and_join(addr, 0).await?;
     // Connect player 1
-    let (mut reader1, mut writer1, _table_state1) = connect_and_join(addr, 1).await?;
+    let (mut reader1, mut writer1, _table_state1, _hand_states1) =
+        connect_and_join(addr, 1).await?;
 
     // Wait for hand start (server automatically starts hand after both seats join)
     // Read HandState for player 0 (should receive)
@@ -255,15 +269,20 @@ async fn reconnection_flow() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Player 1 reconnects (new TCP connection) and joins same seat
-    let (mut reader1_new, mut writer1_new, table_state_reconn) = connect_and_join(addr, 1).await?;
+    let (mut reader1_new, mut writer1_new, table_state_reconn, hand_states_reconn) =
+        connect_and_join(addr, 1).await?;
     // Seat 1 should have a player
     let seats = table_state_reconn["seats"].as_array().unwrap();
     assert!(seats[1]["player"].is_object());
 
     // Should also receive HandState (with hole cards) if hand still active
-    let mut response = String::new();
-    reader1_new.read_line(&mut response).await?;
-    let hand_state_reconn: serde_json::Value = serde_json::from_str(&response)?;
+    let hand_state_reconn = if let Some(hand_state) = hand_states_reconn.into_iter().next() {
+        hand_state
+    } else {
+        let mut response = String::new();
+        reader1_new.read_line(&mut response).await?;
+        serde_json::from_str(&response)?
+    };
     assert_eq!(hand_state_reconn["type"], "hand_state");
     // Verify hole cards are present (should be array of 2 cards)
     let hole_cards = &hand_state_reconn["hole_cards"];

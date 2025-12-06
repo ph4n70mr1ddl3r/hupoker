@@ -2,7 +2,8 @@ use crate::connection::Connection;
 use anyhow::Result;
 #[allow(clippy::single_component_path_imports)]
 use game_engine;
-use server::protocol::messages::TableState;
+use server::protocol::messages::{HandState, TableState};
+use std::time::Instant;
 use tokio::runtime::Runtime;
 
 #[derive(Default)]
@@ -13,6 +14,11 @@ pub struct ConnectionDialog {
     pub error_message: Option<String>,
     pub connection: Option<Connection>,
     pub table_state: Option<TableState>,
+    pub hand_state: Option<HandState>,
+    pub reconnect_table_id: Option<game_engine::TableId>,
+    pub reconnect_seat: Option<u8>,
+    pub reconnect_attempts: u32,
+    pub last_reconnect_attempt: Option<Instant>,
 }
 
 #[derive(Default, PartialEq)]
@@ -21,6 +27,7 @@ pub enum ConnectionStatus {
     Disconnected,
     Connecting,
     Connected,
+    Reconnecting,
 }
 
 impl ConnectionDialog {
@@ -75,6 +82,11 @@ impl ConnectionDialog {
                             }
                         }
                     }
+                    ConnectionStatus::Reconnecting => {
+                        ui.spinner();
+                        ui.label("Reconnecting...");
+                        self.attempt_reconnection();
+                    }
                 }
 
                 if let Some(err) = &self.error_message {
@@ -89,27 +101,39 @@ impl ConnectionDialog {
         self.connection_status = ConnectionStatus::Connecting;
         self.error_message = None;
         self.table_state = None;
+        self.hand_state = None;
 
         let address = self.server_address.clone();
         let rt = Runtime::new().unwrap();
-        let result: Result<(Connection, TableState), anyhow::Error> = rt.block_on(async {
+        let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> = rt.block_on(async {
             // Connect TCP
             let mut conn = Connection::connect(&address).await?;
             // Perform handshake
             conn.handshake("hupoker-client", "0.1.0").await?;
             // Join default table (table-0) seat 0
             let table_id = game_engine::TableId::new("table-0".to_string());
-            let table_state = conn.join_table(table_id, 0).await?;
-            Ok((conn, table_state))
+            let (table_state, hand_states) = conn.join_table(table_id, 0).await?;
+            Ok((conn, table_state, hand_states))
         });
         match result {
-            Ok((conn, table_state)) => {
+            Ok((conn, table_state, hand_states)) => {
+                let table_id = table_state.table_id.clone();
                 self.connection = Some(conn);
                 self.table_state = Some(table_state);
+                self.hand_state = hand_states.into_iter().next(); // store first hand state, if any
                 self.connection_status = ConnectionStatus::Connected;
+                self.reconnect_table_id = Some(table_id);
+                self.reconnect_seat = Some(0); // hardcoded for now
+                self.reconnect_attempts = 0;
+                self.last_reconnect_attempt = None;
             }
             Err(e) => {
-                self.connection_status = ConnectionStatus::Disconnected;
+                // Only start reconnecting if we have reconnect info (i.e., we were previously connected)
+                if self.reconnect_table_id.is_some() && self.reconnect_seat.is_some() {
+                    self.start_reconnecting();
+                } else {
+                    self.connection_status = ConnectionStatus::Disconnected;
+                }
                 self.error_message = Some(format!("Connection failed: {}", e));
             }
         }
@@ -118,6 +142,65 @@ impl ConnectionDialog {
     fn disconnect(&mut self) {
         self.connection = None;
         self.table_state = None;
+        self.hand_state = None;
         self.connection_status = ConnectionStatus::Disconnected;
+    }
+
+    fn start_reconnecting(&mut self) {
+        if let Some(table_state) = &self.table_state {
+            self.reconnect_table_id = Some(table_state.table_id.clone());
+            // Determine which seat we were occupying (hardcoded to seat 0 for now)
+            self.reconnect_seat = Some(0);
+        }
+        self.connection_status = ConnectionStatus::Reconnecting;
+        self.reconnect_attempts = 0;
+        self.last_reconnect_attempt = None;
+    }
+
+    fn attempt_reconnection(&mut self) {
+        self.hand_state = None;
+        const RECONNECT_DELAY_SECS: u64 = 5;
+        let now = Instant::now();
+        if let Some(last) = self.last_reconnect_attempt {
+            if now.duration_since(last).as_secs() < RECONNECT_DELAY_SECS {
+                return; // Wait longer
+            }
+        }
+        self.last_reconnect_attempt = Some(now);
+        self.reconnect_attempts += 1;
+
+        let address = self.server_address.clone();
+        let table_id = self.reconnect_table_id.clone();
+        let seat = self.reconnect_seat;
+        if table_id.is_none() || seat.is_none() {
+            self.error_message = Some("Cannot reconnect: missing table or seat".to_string());
+            self.connection_status = ConnectionStatus::Disconnected;
+            return;
+        }
+        let table_id = table_id.unwrap();
+        let seat = seat.unwrap();
+
+        let rt = Runtime::new().unwrap();
+        let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> = rt.block_on(async {
+            let mut conn = Connection::connect(&address).await?;
+            conn.handshake("hupoker-client", "0.1.0").await?;
+            let (table_state, hand_states) = conn.join_table(table_id, seat).await?;
+            Ok((conn, table_state, hand_states))
+        });
+
+        match result {
+            Ok((conn, table_state, hand_states)) => {
+                self.connection = Some(conn);
+                self.table_state = Some(table_state);
+                self.hand_state = hand_states.into_iter().next(); // store first hand state, if any
+                self.connection_status = ConnectionStatus::Connected;
+                self.error_message = None;
+                self.reconnect_attempts = 0;
+            }
+            Err(e) => {
+                self.error_message = Some(format!("Reconnection failed (attempt {}): {}", self.reconnect_attempts, e));
+                // Stay in Reconnecting state; will retry later
+            }
+        }
     }
 }

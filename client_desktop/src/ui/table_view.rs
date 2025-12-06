@@ -45,6 +45,10 @@ impl TableView {
         }
     }
 
+    pub fn set_connection(&mut self, connection: Connection) {
+        self.connection = Some(connection);
+    }
+
     pub fn update_from_hand_state(&mut self, hand_state: &ServerHandState) {
         self.hand_id = Some(hand_state.hand_id);
         self.community_cards = hand_state.community_cards.clone();

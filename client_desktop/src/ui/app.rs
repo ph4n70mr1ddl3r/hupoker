@@ -24,6 +24,20 @@ impl eframe::App for HupokerApp {
                     let player_seat = 0; // TODO: get actual seat
                     let connection = self.connection_dialog.connection.take();
                     self.table_view = Some(TableView::new(player_seat, table_id, connection));
+                } else {
+                    // Table view already exists (reconnection case)
+                    // Update its connection with the new one from dialog
+                    if let Some(conn) = self.connection_dialog.connection.take() {
+                        if let Some(table_view) = &mut self.table_view {
+                            table_view.set_connection(conn);
+                        }
+                    }
+                }
+                // Update table view with hand state if any (from reconnection)
+                if let Some(hand_state) = self.connection_dialog.hand_state.take() {
+                    if let Some(table_view) = &mut self.table_view {
+                        table_view.update_from_hand_state(&hand_state);
+                    }
                 }
                 // Close connection dialog
                 self.connection_dialog.open = false;

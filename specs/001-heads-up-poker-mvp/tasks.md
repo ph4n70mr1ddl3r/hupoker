@@ -116,16 +116,16 @@
 
 ### Tests for User Story 3 (Optional but recommended)
 
-- [ ] T040 [P] [US3] Integration test for reconnection flow in `tests/integration/reconnection.rs`
+- [X] T040 [P] [US3] Integration test for reconnection flow in `tests/integration/reconnection.rs`
 
 ### Implementation for User Story 3
 
-- [ ] T041 [US3] Add `disconnected_at: Option<Instant>` field to `Player` struct (data‑model)
-- [ ] T042 [US3] Server: on TCP disconnect, mark player as disconnected, start reconnection timer
-- [ ] T043 [US3] Server: allow `JoinTable` for same seat within `reconnection_timeout_secs` if `disconnected_at` is set
-- [ ] T044 [US3] Server: on re‑join, send current `TableState` and `HandState` (with player’s hole cards)
-- [ ] T045 [US3] Client: handle network errors gracefully, show "Reconnecting…" UI, attempt automatic reconnection
-- [ ] T046 [US3] Client: restore UI state after reconnection (same seat, same hand)
+- [X] T041 [US3] Add `disconnected_at: Option<Instant>` field to `Player` struct (data‑model)
+- [X] T042 [US3] Server: on TCP disconnect, mark player as disconnected, start reconnection timer
+- [X] T043 [US3] Server: allow `JoinTable` for same seat within `reconnection_timeout_secs` if `disconnected_at` is set
+- [X] T044 [US3] Server: on re‑join, send current `TableState` and `HandState` (with player’s hole cards)
+ - [X] T045 [US3] Client: handle network errors gracefully, show "Reconnecting…" UI, attempt automatic reconnection
+ - [X] T046 [US3] Client: restore UI state after reconnection (same seat, same hand)
 
 **Checkpoint**: User Story 3 complete. Player can survive brief network interruption without losing seat or chips.
 
