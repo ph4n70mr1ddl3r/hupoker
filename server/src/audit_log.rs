@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose, Engine as _};
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
 use game_engine::{HandId, TableId};
 use serde::Serialize;
-use base64::{engine::general_purpose, Engine as _};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -74,11 +74,8 @@ impl AuditLog {
             }
             None => general_purpose::STANDARD.encode(seed),
         };
-        let event = AuditEvent::HandStart {
-            hand_id,
-            table_id: table_id.clone(),
-            rng_seed_encrypted,
-        };
+        let event =
+            AuditEvent::HandStart { hand_id, table_id: table_id.clone(), rng_seed_encrypted };
         self.log_event(event)
     }
 

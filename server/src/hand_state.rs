@@ -23,10 +23,8 @@ pub fn create_hand_state(
         Vec::new()
     };
     // Format last_action_time as ISO 8601 string
-    let last_action_time = hand
-        .last_action_time
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let last_action_time =
+        hand.last_action_time.map(|dt| dt.to_rfc3339()).unwrap_or_else(|| Utc::now().to_rfc3339());
     HandState {
         hand_id: hand.id,
         table_id,

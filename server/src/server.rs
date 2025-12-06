@@ -5,7 +5,10 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use crate::{audit_log::AuditLog, table_manager::TableManager};
+use crate::{
+    audit_log::AuditLog, connection_manager::ConnectionManager,
+    hand_state::create_hand_state_message, table_manager::TableManager,
+};
 use game_engine::ServerConfig;
 
 #[derive(Clone)]
@@ -13,11 +16,11 @@ pub struct Server {
     config: ServerConfig,
     audit_log: Arc<Mutex<AuditLog>>,
     table_manager: Arc<Mutex<TableManager>>,
+    connection_manager: ConnectionManager,
 }
 
 impl Server {
     pub fn new(config: ServerConfig, audit_log: AuditLog) -> Self {
-
         use game_engine::{Table, TableId};
 
         // Create tables from config
@@ -39,13 +42,17 @@ impl Server {
             config,
             audit_log: Arc::new(Mutex::new(audit_log)),
             table_manager: Arc::new(Mutex::new(table_manager)),
+            connection_manager: ConnectionManager::new(),
         }
     }
 
     /// Attempt to start a hand at the given table if both seats are occupied and no hand is in progress.
     /// Generates a cryptographically random seed, logs it to the audit log, and creates the hand.
     /// Returns the HandId if a hand was started, or None otherwise.
-    pub async fn start_hand_if_possible(&self, table_id: &game_engine::TableId) -> Option<game_engine::HandId> {
+    pub async fn start_hand_if_possible(
+        &self,
+        table_id: &game_engine::TableId,
+    ) -> Option<game_engine::HandId> {
         use getrandom::getrandom;
         // Lock table manager
         let mut tm = self.table_manager.lock().await;
@@ -54,6 +61,8 @@ impl Server {
             Some(t) => t,
             None => return None,
         };
+        let config = table.config.clone();
+        let button_position = table.next_button_position;
         let occupied_seats: Vec<_> = table.seats.iter().filter_map(|s| s.as_ref()).collect();
         if occupied_seats.len() != 2 || table.current_hand.is_some() {
             return None;
@@ -81,6 +90,27 @@ impl Server {
             }
         }
         info!("started hand {:?} at table {}", hand_id, table_id.as_str());
+        // Get the newly created hand
+        let hand = tm
+            .get_table(table_id)
+            .and_then(|t| t.current_hand.as_ref())
+            .expect("hand just started");
+        let hand_clone = hand.clone();
+        drop(tm); // release lock before broadcasting
+                  // Broadcast HandState to both seats
+        self.connection_manager
+            .broadcast_to_table(table_id, |seat| {
+                let acting_seat = hand_clone.button_position; // small blind acts first preflop
+                let time_remaining_ms = config.action_timeout_secs * 1000;
+                create_hand_state_message(
+                    &hand_clone,
+                    table_id.clone(),
+                    seat,
+                    Some(acting_seat),
+                    time_remaining_ms,
+                )
+            })
+            .await;
         Some(hand_id)
     }
 
@@ -110,6 +140,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     use crate::protocol::messages::Message;
     use game_engine::{ConnectionId, Player};
     use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
+    use tokio::sync::mpsc;
     use tracing::{debug, warn};
     use uuid::Uuid;
 
@@ -121,9 +152,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     let client_hello: Message = read_message(&mut reader).await?;
     debug!("received {:?}", client_hello);
     let (version, client_name, client_version) = match client_hello {
-        Message::ClientHello { version, client_name: _client_name, client_version: _client_version } => {
-            (version, _client_name, _client_version)
-        }
+        Message::ClientHello {
+            version,
+            client_name: _client_name,
+            client_version: _client_version,
+        } => (version, _client_name, _client_version),
         _ => {
             warn!("first message not ClientHello");
             return Ok(());
@@ -146,8 +179,27 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     writer.flush().await?;
     debug!("sent ServerHello");
 
+    // Create channel for outgoing messages and spawn writer task
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let writer_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            if let Err(e) = write_message(&mut writer, &msg).await {
+                debug!("failed to write message: {}", e);
+                break;
+            }
+            if let Err(e) = writer.flush().await {
+                debug!("failed to flush writer: {}", e);
+                break;
+            }
+        }
+        debug!("writer task exiting");
+    });
+
     // Generate a connection ID for this client
     let connection_id = ConnectionId::new(Uuid::new_v4());
+    // Track which table/seat this connection is occupying (if any)
+    let mut current_table = None;
+    let mut current_seat = None;
     // Main message loop
     loop {
         let msg: Message = read_message(&mut reader).await?;
@@ -156,14 +208,16 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
             Message::JoinTable { version, table_id, seat } => {
                 // Validate seat
                 if seat != 0 && seat != 1 {
-                    // Send error
+                    // Send error via channel
                     let error = Message::Error {
                         version: "1.0".to_string(),
                         code: "invalid_seat".to_string(),
                         message: "seat must be 0 or 1".to_string(),
                         original_type: "join_table".to_string(),
                     };
-                    write_message(&mut writer, &error).await?;
+                    if tx.send(error).is_err() {
+                        break;
+                    }
                     continue;
                 }
                 // Create player object
@@ -196,6 +250,13 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 };
                 match result {
                     Ok((config, seats)) => {
+                        // Register this connection with the connection manager
+                        server
+                            .connection_manager
+                            .register(table_id.clone(), seat, tx.clone())
+                            .await;
+                        current_table = Some(table_id.clone());
+                        current_seat = Some(seat);
                         // Attempt to start a hand if both seats are now occupied
                         let current_hand_id = server.start_hand_if_possible(&table_id).await;
                         let table_state = Message::TableState {
@@ -205,7 +266,10 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             config,
                             current_hand_id,
                         };
-                        write_message(&mut writer, &table_state).await?;
+                        if tx.send(table_state).is_err() {
+                            break;
+                        }
+                        // TODO: if hand started, broadcast HandState
                     }
                     Err(e) => {
                         let error = Message::Error {
@@ -214,10 +278,15 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             message: e,
                             original_type: "join_table".to_string(),
                         };
-                        write_message(&mut writer, &error).await?;
+                        if tx.send(error).is_err() {
+                            break;
+                        }
+                        // Unregister this connection if it was registered
+                        if let (Some(table_id), Some(seat)) = (current_table, current_seat) {
+                            server.connection_manager.unregister(&table_id, seat).await;
+                        }
                     }
                 }
-                writer.flush().await?;
             }
             Message::Heartbeat { version: _, timestamp: _ } => {
                 // Echo heartbeat
@@ -225,8 +294,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     version: "1.0".to_string(),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
-                write_message(&mut writer, &heartbeat).await?;
-                writer.flush().await?;
+                if tx.send(heartbeat).is_err() {
+                    break;
+                }
             }
             _ => {
                 warn!("unexpected message type");
@@ -237,8 +307,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     message: "message not allowed in current state".to_string(),
                     original_type: "unknown".to_string(),
                 };
-                write_message(&mut writer, &error).await?;
-                writer.flush().await?;
+                if tx.send(error).is_err() {
+                    break;
+                }
             }
         }
     }
