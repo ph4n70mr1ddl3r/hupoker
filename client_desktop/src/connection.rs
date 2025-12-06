@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use game_engine::{ActionKind, HandId};
 use server::protocol::messages::Message;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
@@ -86,6 +87,17 @@ impl Connection {
             }
             _ => anyhow::bail!("unexpected response to JoinTable"),
         }
+    }
+
+    pub async fn send_action(
+        &mut self,
+        hand_id: HandId,
+        kind: ActionKind,
+        amount: Option<u64>,
+    ) -> Result<()> {
+        let action = Message::Action { version: "1.0".to_string(), hand_id, kind, amount };
+        self.send_message(&action).await?;
+        Ok(())
     }
 }
 

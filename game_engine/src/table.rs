@@ -111,14 +111,12 @@ impl Table {
             return Err("cannot start hand: a hand is already in progress".to_string());
         }
         // Collect player stacks
-        let player_stacks = [
-            self.seats[0].as_ref().unwrap().stack,
-            self.seats[1].as_ref().unwrap().stack,
-        ];
+        let player_stacks =
+            [self.seats[0].as_ref().unwrap().stack, self.seats[1].as_ref().unwrap().stack];
         // Determine button position
         let button_position = self.next_button_position;
         // Create hand
-        let mut hand = Hand::deal(
+        let hand = Hand::deal(
             self.config.small_blind,
             self.config.big_blind,
             button_position,

@@ -24,7 +24,8 @@ impl eframe::App for HupokerApp {
                 if self.table_view.is_none() {
                     let table_id = table_state.table_id.clone();
                     let player_seat = 0; // TODO: get actual seat
-                    self.table_view = Some(TableView::new(player_seat, table_id));
+                    let connection = self.connection_dialog.connection.take();
+                    self.table_view = Some(TableView::new(player_seat, table_id, connection));
                 }
                 // Close connection dialog
                 self.connection_dialog.open = false;

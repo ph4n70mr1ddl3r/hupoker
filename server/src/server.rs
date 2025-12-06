@@ -282,7 +282,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             break Ok(());
                         }
                         // Unregister this connection if it was registered
-                        if let (Some(table_id), Some(seat)) = (current_table.as_ref(), current_seat) {
+                        if let (Some(table_id), Some(seat)) = (current_table.as_ref(), current_seat)
+                        {
                             server.connection_manager.unregister(table_id, seat).await;
                         }
                     }
@@ -309,7 +310,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             message: "must join a table before acting".to_string(),
                             original_type: "action".to_string(),
                         };
-                        if tx.send(error).is_err() { break Ok(()); }
+                        if tx.send(error).is_err() {
+                            break Ok(());
+                        }
                         continue;
                     }
                 };
@@ -325,7 +328,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             message: "table no longer exists".to_string(),
                             original_type: "action".to_string(),
                         };
-                        if tx.send(error).is_err() { break Ok(()); }
+                        if tx.send(error).is_err() {
+                            break Ok(());
+                        }
                         continue;
                     }
                 };
@@ -339,7 +344,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             message: "hand not found or not active".to_string(),
                             original_type: "action".to_string(),
                         };
-                        if tx.send(error).is_err() { break Ok(()); }
+                        if tx.send(error).is_err() {
+                            break Ok(());
+                        }
                         continue;
                     }
                 };
@@ -353,16 +360,13 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         message: "it is not your turn to act".to_string(),
                         original_type: "action".to_string(),
                     };
-                    if tx.send(error).is_err() { break Ok(()); }
+                    if tx.send(error).is_err() {
+                        break Ok(());
+                    }
                     continue;
                 }
                 // Create action struct
-                let action = Action {
-                    seat,
-                    kind,
-                    amount,
-                    timestamp: Utc::now(),
-                };
+                let action = Action { seat, kind, amount, timestamp: Utc::now() };
                 // Apply action
                 if let Err(e) = hand.apply_action(action.clone()) {
                     drop(tm);
@@ -372,7 +376,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         message: e,
                         original_type: "action".to_string(),
                     };
-                    if tx.send(error).is_err() { break Ok(()); }
+                    if tx.send(error).is_err() {
+                        break Ok(());
+                    }
                     continue;
                 }
                 // Success: broadcast updated hand state
@@ -383,15 +389,18 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 // Determine acting seat for next player (or None if round complete)
                 let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
                 let time_remaining_ms = config.action_timeout_secs * 1000;
-                server.connection_manager.broadcast_to_table(&table_id, |player_seat| {
-                    create_hand_state_message(
-                        &hand_clone,
-                        table_id.clone(),
-                        player_seat,
-                        next_acting_seat,
-                        time_remaining_ms,
-                    )
-                }).await;
+                server
+                    .connection_manager
+                    .broadcast_to_table(&table_id, |player_seat| {
+                        create_hand_state_message(
+                            &hand_clone,
+                            table_id.clone(),
+                            player_seat,
+                            next_acting_seat,
+                            time_remaining_ms,
+                        )
+                    })
+                    .await;
 
                 // Handle fold immediately (hand ends)
                 if action.kind == ActionKind::Fold {
@@ -408,14 +417,22 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         let table_state = Message::TableState {
                             version: "1.0".to_string(),
                             table_id: table_id.clone(),
-                            seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                seat: i as u8,
-                                player: maybe_player.clone(),
-                            }).collect(),
+                            seats: table_clone
+                                .seats
+                                .iter()
+                                .enumerate()
+                                .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                                    seat: i as u8,
+                                    player: maybe_player.clone(),
+                                })
+                                .collect(),
                             config: table_clone.config.clone(),
                             current_hand_id: None,
                         };
-                        server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                        server
+                            .connection_manager
+                            .broadcast_to_table(&table_id, |_| table_state.clone())
+                            .await;
                     } else {
                         // Award pot(s) to winners (same logic as showdown but no side pots expected)
                         let button = hand_clone.button_position;
@@ -425,7 +442,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         }
                         let mut awards = [0u64, 0u64];
                         for (amount, eligible_seats) in pots {
-                            let eligible_winners: Vec<_> = winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
+                            let eligible_winners: Vec<_> = winners
+                                .iter()
+                                .filter(|&seat| eligible_seats.contains(seat))
+                                .copied()
+                                .collect();
                             if eligible_winners.is_empty() {
                                 continue;
                             }
@@ -459,14 +480,22 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         let table_state = Message::TableState {
                             version: "1.0".to_string(),
                             table_id: table_id.clone(),
-                            seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                seat: i as u8,
-                                player: maybe_player.clone(),
-                            }).collect(),
+                            seats: table_clone
+                                .seats
+                                .iter()
+                                .enumerate()
+                                .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                                    seat: i as u8,
+                                    player: maybe_player.clone(),
+                                })
+                                .collect(),
                             config: table_clone.config.clone(),
                             current_hand_id: None,
                         };
-                        server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                        server
+                            .connection_manager
+                            .broadcast_to_table(&table_id, |_| table_state.clone())
+                            .await;
                     }
                 } else if hand_clone.betting.is_round_complete() {
                     // Re-lock table manager to advance street
@@ -488,17 +517,21 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         let hand_clone = hand.clone();
                         let config = table.config.clone();
                         drop(tm);
-                        let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
+                        let next_acting_seat =
+                            hand_clone.betting.acting_seat(hand_clone.button_position);
                         let time_remaining_ms = config.action_timeout_secs * 1000;
-                        server.connection_manager.broadcast_to_table(&table_id, |player_seat| {
-                            create_hand_state_message(
-                                &hand_clone,
-                                table_id.clone(),
-                                player_seat,
-                                next_acting_seat,
-                                time_remaining_ms,
-                            )
-                        }).await;
+                        server
+                            .connection_manager
+                            .broadcast_to_table(&table_id, |player_seat| {
+                                create_hand_state_message(
+                                    &hand_clone,
+                                    table_id.clone(),
+                                    player_seat,
+                                    next_acting_seat,
+                                    time_remaining_ms,
+                                )
+                            })
+                            .await;
                         // If street is Showdown, evaluate winner and award pot
                         if hand_clone.current_street == Street::Showdown {
                             // Evaluate winners
@@ -514,14 +547,24 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                 let table_state = Message::TableState {
                                     version: "1.0".to_string(),
                                     table_id: table_id.clone(),
-                                    seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                        seat: i as u8,
-                                        player: maybe_player.clone(),
-                                    }).collect(),
+                                    seats: table_clone
+                                        .seats
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, maybe_player)| {
+                                            crate::protocol::messages::TableSeat {
+                                                seat: i as u8,
+                                                player: maybe_player.clone(),
+                                            }
+                                        })
+                                        .collect(),
                                     config: table_clone.config.clone(),
                                     current_hand_id: None,
                                 };
-                                server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                                server
+                                    .connection_manager
+                                    .broadcast_to_table(&table_id, |_| table_state.clone())
+                                    .await;
                             } else {
                                 // Award pot(s) to winners
                                 let button = hand_clone.button_position;
@@ -534,7 +577,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                 let mut awards = [0u64, 0u64];
                                 for (amount, eligible_seats) in pots {
                                     // Determine which winners are eligible for this pot
-                                    let eligible_winners: Vec<_> = winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
+                                    let eligible_winners: Vec<_> = winners
+                                        .iter()
+                                        .filter(|&seat| eligible_seats.contains(seat))
+                                        .copied()
+                                        .collect();
                                     if eligible_winners.is_empty() {
                                         continue; // no eligible winner (should not happen)
                                     }
@@ -548,7 +595,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                             // Determine which winner gets remainder: winner closest to button (heads‑up: button first)
                                             // Sort eligible winners by distance to button (clockwise)
                                             let mut sorted = eligible_winners.clone();
-                                            sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
+                                            sorted
+                                                .sort_by_key(|&s| if s == button { 0 } else { 1 });
                                             if seat == sorted[0] {
                                                 award += remainder;
                                             }
@@ -572,14 +620,24 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                 let table_state = Message::TableState {
                                     version: "1.0".to_string(),
                                     table_id: table_id.clone(),
-                                    seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                        seat: i as u8,
-                                        player: maybe_player.clone(),
-                                    }).collect(),
+                                    seats: table_clone
+                                        .seats
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, maybe_player)| {
+                                            crate::protocol::messages::TableSeat {
+                                                seat: i as u8,
+                                                player: maybe_player.clone(),
+                                            }
+                                        })
+                                        .collect(),
                                     config: table_clone.config.clone(),
                                     current_hand_id: None,
                                 };
-                                server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                                server
+                                    .connection_manager
+                                    .broadcast_to_table(&table_id, |_| table_state.clone())
+                                    .await;
                             }
                         }
                     }

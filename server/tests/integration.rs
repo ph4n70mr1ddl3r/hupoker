@@ -38,7 +38,7 @@ async fn client_hello_server_hello() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect client
-    let mut stream = TcpStream::connect(addr).await?;
+    let stream = TcpStream::connect(addr).await?;
     let (read_half, write_half) = tokio::io::split(stream);
     let mut reader = BufReader::new(read_half);
     let mut writer = BufWriter::new(write_half);
@@ -97,7 +97,7 @@ async fn join_table_success() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect client
-    let mut stream = TcpStream::connect(addr).await?;
+    let stream = TcpStream::connect(addr).await?;
     let (read_half, write_half) = tokio::io::split(stream);
     let mut reader = BufReader::new(read_half);
     let mut writer = BufWriter::new(write_half);

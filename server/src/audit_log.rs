@@ -10,7 +10,6 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-
 pub struct AuditLog {
     writer: BufWriter<File>,
     cipher: Option<ChaCha20Poly1305>,

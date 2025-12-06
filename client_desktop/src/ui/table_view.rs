@@ -1,6 +1,11 @@
+use super::cards::CardWidget;
+use super::chips::ChipStackWidget;
+use crate::connection::Connection;
+use anyhow::anyhow;
 use egui::{Color32, Pos2, Rect, Shape, Stroke, Ui};
-use game_engine::{Card, Pot, Street};
-use server::protocol::messages::HandState as ServerHandState;
+use game_engine::{ActionKind, Card, Pot, Street};
+use server::protocol::messages::{HandState as ServerHandState, Message};
+use tokio::runtime::Runtime;
 
 pub struct TableView {
     pub player_seat: u8,
@@ -13,10 +18,16 @@ pub struct TableView {
     pub current_street: Street,
     pub acting_seat: Option<u8>,
     pub hole_cards: Vec<Card>, // for the current player
+    pub connection: Option<Connection>,
+    pub error_message: Option<String>,
 }
 
 impl TableView {
-    pub fn new(player_seat: u8, table_id: game_engine::TableId) -> Self {
+    pub fn new(
+        player_seat: u8,
+        table_id: game_engine::TableId,
+        connection: Option<Connection>,
+    ) -> Self {
         Self {
             player_seat,
             table_id,
@@ -28,6 +39,8 @@ impl TableView {
             current_street: Street::PreFlop,
             acting_seat: None,
             hole_cards: Vec::new(),
+            connection,
+            error_message: None,
         }
     }
 
@@ -41,6 +54,62 @@ impl TableView {
         self.acting_seat = hand_state.acting_seat;
         // hole_cards are already filtered for this player by server
         self.hole_cards = hand_state.hole_cards.clone();
+    }
+
+    fn handle_action(
+        &mut self,
+        kind: ActionKind,
+        amount: Option<u64>,
+    ) -> Result<(), anyhow::Error> {
+        let hand_id = self.hand_id.ok_or_else(|| anyhow!("no active hand"))?;
+        let conn = self.connection.as_mut().ok_or_else(|| anyhow!("no connection"))?;
+        let rt = Runtime::new()?;
+        self.error_message = None;
+        let response = rt.block_on(async {
+            conn.send_action(hand_id, kind, amount).await?;
+            conn.receive_message().await
+        })?;
+        match response {
+            Message::HandState {
+                hand_id,
+                table_id,
+                hole_cards,
+                community_cards,
+                pot,
+                current_street,
+                actions,
+                player_stacks,
+                button_position,
+                last_action_time,
+                acting_seat,
+                time_remaining_ms,
+            } => {
+                let hand_state = ServerHandState {
+                    hand_id,
+                    table_id,
+                    hole_cards,
+                    community_cards,
+                    pot,
+                    current_street,
+                    actions,
+                    player_stacks,
+                    button_position,
+                    last_action_time,
+                    acting_seat,
+                    time_remaining_ms,
+                };
+                self.update_from_hand_state(&hand_state);
+                Ok(())
+            }
+            Message::Error { code, message, .. } => {
+                self.error_message = Some(format!("server error {}: {}", code, message));
+                Err(anyhow!("server error {}: {}", code, message))
+            }
+            _ => {
+                self.error_message = Some("unexpected response".to_string());
+                Err(anyhow!("unexpected response"))
+            }
+        }
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
@@ -66,27 +135,21 @@ impl TableView {
         let total_width = self.community_cards.len() as f32 * (card_width + spacing) - spacing;
         let mut x = community_center.x - total_width * 0.5;
         for card in &self.community_cards {
-            let rect = Rect::from_min_size(Pos2::new(x, community_center.y - card_height * 0.5), egui::Vec2::new(card_width, card_height));
-            ui.painter().rect(
-                rect,
-                5.0,
-                Color32::from_rgb(255, 255, 255),
-                Stroke::new(1.0, Color32::from_rgb(0, 0, 0)),
+            let rect = Rect::from_min_size(
+                Pos2::new(x, community_center.y - card_height * 0.5),
+                egui::Vec2::new(card_width, card_height),
             );
-            // Draw rank/suit text (simplified)
-            let text = format!("{:?}{:?}", card.rank, card.suit);
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                text,
-                egui::FontId::monospace(12.0),
-                Color32::BLACK,
-            );
+            CardWidget::draw(ui, card, rect);
             x += card_width + spacing;
         }
 
-        // Draw pot
-        ui.label(format!("Pot: {}", self.pot.total()));
+        // Draw pot (below community cards)
+        let pot_total = self.pot.total();
+        let pot_rect = Rect::from_min_size(
+            Pos2::new(community_center.x - 40.0, community_center.y + card_height * 0.5 + 20.0),
+            egui::Vec2::new(80.0, 80.0),
+        );
+        ChipStackWidget::draw_pot(ui, pot_total, pot_rect);
 
         // Draw player stacks
         ui.horizontal(|ui| {
@@ -104,29 +167,46 @@ impl TableView {
         if !self.hole_cards.is_empty() {
             ui.label("Your hole cards:");
             ui.horizontal(|ui| {
+                let card_width = 40.0;
+                let card_height = 60.0;
+                let spacing = 10.0;
                 for card in &self.hole_cards {
-                    let card_text = format!("{:?}{:?}", card.rank, card.suit);
-                    ui.label(card_text);
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::Vec2::new(card_width, card_height),
+                        egui::Sense::hover(),
+                    );
+                    CardWidget::draw(ui, card, rect);
+                    ui.add_space(spacing);
                 }
             });
         }
 
-        // Action buttons (placeholder)
+        // Show error message if any
+        if let Some(err) = &self.error_message {
+            ui.colored_label(Color32::RED, err);
+        }
+
+        // Action buttons
         ui.horizontal(|ui| {
+            let is_my_turn = self.acting_seat == Some(self.player_seat);
+            ui.set_enabled(is_my_turn);
             if ui.button("Fold").clicked() {
-                // TODO
+                let _ = self.handle_action(ActionKind::Fold, None);
             }
             if ui.button("Check").clicked() {
-                // TODO
+                let _ = self.handle_action(ActionKind::Check, None);
             }
             if ui.button("Call").clicked() {
-                // TODO
+                // TODO: need amount to call
+                let _ = self.handle_action(ActionKind::Call, Some(100));
             }
             if ui.button("Bet").clicked() {
-                // TODO
+                // TODO: need bet amount
+                let _ = self.handle_action(ActionKind::Bet, Some(100));
             }
             if ui.button("Raise").clicked() {
-                // TODO
+                // TODO: need raise amount
+                let _ = self.handle_action(ActionKind::Raise, Some(200));
             }
         });
     }
