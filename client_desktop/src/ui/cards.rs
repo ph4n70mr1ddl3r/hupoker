@@ -1,4 +1,4 @@
-use egui::{Color32, Pos2, Rect, Shape, Stroke, Ui};
+use egui::{Color32, Rect, Stroke, Ui};
 use game_engine::{Card, Rank, Suit};
 
 /// Widget that renders a single card.

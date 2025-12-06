@@ -1,6 +1,5 @@
 use anyhow::Result;
 use server::{audit_log::AuditLog, config, server::Server};
-use tracing_subscriber;
 
 fn main() -> Result<()> {
     // Initialize logging

@@ -144,3 +144,9 @@ async fn join_table_success() -> Result<()> {
     server_handle.abort();
     Ok(())
 }
+
+#[tokio::test]
+async fn reconnection_flow() -> Result<()> {
+    // TODO: implement reconnection test
+    Ok(())
+}

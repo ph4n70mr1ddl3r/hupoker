@@ -70,3 +70,9 @@ impl ConnectionManager {
         inner.connections.contains_key(&(table_id.clone(), seat))
     }
 }
+
+impl Default for ConnectionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

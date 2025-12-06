@@ -1,5 +1,6 @@
 use crate::connection::Connection;
 use anyhow::Result;
+#[allow(clippy::single_component_path_imports)]
 use game_engine;
 use server::protocol::messages::TableState;
 use tokio::runtime::Runtime;
@@ -19,8 +20,6 @@ pub enum ConnectionStatus {
     #[default]
     Disconnected,
     Connecting,
-    Handshake,
-    Joining,
     Connected,
 }
 
@@ -46,14 +45,7 @@ impl ConnectionDialog {
                         ui.spinner();
                         ui.label("Connecting...");
                     }
-                    ConnectionStatus::Handshake => {
-                        ui.spinner();
-                        ui.label("Performing handshake...");
-                    }
-                    ConnectionStatus::Joining => {
-                        ui.spinner();
-                        ui.label("Joining table...");
-                    }
+
                     ConnectionStatus::Connected => {
                         ui.colored_label(egui::Color32::GREEN, "Connected!");
                         if ui.button("Disconnect").clicked() {

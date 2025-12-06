@@ -1,3 +1,4 @@
+use chrono::Utc;
 use game_engine::{HandId, Player, Table, TableId};
 
 pub struct TableManager {
@@ -33,9 +34,35 @@ impl TableManager {
         if seat >= 2 {
             return Err("seat must be 0 or 1".to_string());
         }
-        if table.seats[seat as usize].is_some() {
-            return Err("seat already occupied".to_string());
+        // Check if seat already occupied
+        if let Some(existing_player) = &table.seats[seat as usize] {
+            // Seat occupied; check if disconnected and within reconnection timeout
+            if let Some(disconnected_at) = existing_player.disconnected_at {
+                let elapsed = Utc::now() - disconnected_at;
+                let timeout = chrono::Duration::seconds(table.config.reconnection_timeout_secs as i64);
+                if elapsed < timeout {
+                    // Allow reconnection: replace player, clear disconnected_at
+                    // Ensure player seat matches
+                    if player.seat != seat {
+                        return Err("player seat does not match".to_string());
+                    }
+                    // Replace player (keeping stack? we keep existing player's stack?)
+                    // For now, keep existing stack and update connection_id, clear disconnected_at
+                    let mut new_player = player;
+                    new_player.stack = existing_player.stack;
+                    new_player.disconnected_at = None;
+                    table.seats[seat as usize] = Some(new_player);
+                    return Ok(());
+                } else {
+                    // Timeout expired; remove the player (seat becomes empty)
+                    table.seats[seat as usize] = None;
+                }
+            } else {
+                // Player connected, seat occupied
+                return Err("seat already occupied".to_string());
+            }
         }
+        // At this point, seat is empty (or just cleared)
         // Ensure player seat matches
         if player.seat != seat {
             return Err("player seat does not match".to_string());
@@ -51,5 +78,29 @@ impl TableManager {
     pub fn start_hand(&mut self, table_id: &TableId, seed: [u8; 32]) -> Result<HandId, String> {
         let table = self.get_table_mut(table_id).ok_or_else(|| "table not found".to_string())?;
         table.start_hand(seed)
+    }
+
+    /// Mark a player as disconnected at the given seat.
+    /// Returns true if the seat was occupied and the player was marked.
+    pub fn mark_disconnected(&mut self, table_id: &TableId, seat: u8) -> bool {
+        if seat >= 2 {
+            return false;
+        }
+        let table = match self.get_table_mut(table_id) {
+            Some(table) => table,
+            None => return false,
+        };
+        if let Some(player) = &mut table.seats[seat as usize] {
+            player.disconnected_at = Some(Utc::now());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for TableManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

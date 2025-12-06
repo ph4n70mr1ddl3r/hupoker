@@ -1,6 +1,5 @@
 use crate::ui::connection_dialog::{ConnectionDialog, ConnectionStatus};
 use crate::ui::TableView;
-use game_engine::TableId;
 
 pub struct HupokerApp {
     connection_dialog: ConnectionDialog,
@@ -9,8 +8,7 @@ pub struct HupokerApp {
 
 impl HupokerApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let mut dialog = ConnectionDialog::default();
-        dialog.open = true;
+        let dialog = ConnectionDialog { open: true, ..Default::default() };
         Self { connection_dialog: dialog, table_view: None }
     }
 }

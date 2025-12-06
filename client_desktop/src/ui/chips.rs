@@ -1,4 +1,4 @@
-use egui::{Color32, Pos2, Rect, Shape, Stroke, Ui};
+use egui::{Color32, Pos2, Rect, Stroke, Ui};
 
 /// Widget that renders a stack of chips.
 pub struct ChipStackWidget;

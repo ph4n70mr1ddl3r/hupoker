@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -114,6 +114,24 @@ impl Server {
         Some(hand_id)
     }
 
+    /// Mark a player as disconnected and unregister their connection.
+    /// If table_id or seat is None, does nothing.
+    pub async fn cleanup_connection(&self, table_id: Option<&game_engine::TableId>, seat: Option<game_engine::Seat>) {
+        let (table_id, seat) = match (table_id, seat) {
+            (Some(table_id), Some(seat)) => (table_id, seat),
+            _ => return,
+        };
+        // Mark player as disconnected
+        let marked = {
+            let mut tm = self.table_manager.lock().await;
+            tm.mark_disconnected(table_id, seat)
+        };
+        if marked {
+            // Unregister from connection manager
+            self.connection_manager.unregister(table_id, seat).await;
+        }
+    }
+
     pub async fn bind(&self) -> Result<TcpListener> {
         let listener = TcpListener::bind(&self.config.bind_address).await?;
         info!("server listening on {}", self.config.bind_address);
@@ -151,7 +169,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     // Step 1: read ClientHello
     let client_hello: Message = read_message(&mut reader).await?;
     debug!("received {:?}", client_hello);
-    let (version, client_name, client_version) = match client_hello {
+    let (version, _client_name, _client_version) = match client_hello {
         Message::ClientHello {
             version,
             client_name: _client_name,
@@ -181,7 +199,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
 
     // Create channel for outgoing messages and spawn writer task
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let writer_task = tokio::spawn(async move {
+    let _writer_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let Err(e) = write_message(&mut writer, &msg).await {
                 debug!("failed to write message: {}", e);
@@ -202,10 +220,16 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     let mut current_seat = None;
     // Main message loop
     loop {
-        let msg: Message = read_message(&mut reader).await?;
+        let msg: Message = match read_message(&mut reader).await {
+            Ok(msg) => msg,
+            Err(e) => {
+                server.cleanup_connection(current_table.as_ref(), current_seat).await;
+                return Err(e);
+            }
+        };
         debug!("received {:?}", msg);
         match msg {
-            Message::JoinTable { version, table_id, seat } => {
+            Message::JoinTable { version: _, table_id, seat } => {
                 // Validate seat
                 if seat != 0 && seat != 1 {
                     // Send error via channel
@@ -261,15 +285,42 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         let current_hand_id = server.start_hand_if_possible(&table_id).await;
                         let table_state = Message::TableState {
                             version: "1.0".to_string(),
-                            table_id,
+                            table_id: table_id.clone(),
                             seats,
                             config,
                             current_hand_id,
                         };
                         if tx.send(table_state).is_err() {
+                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
-                        // TODO: if hand started, broadcast HandState
+                        // If a hand is already in progress, send HandState to this player
+                        let hand_state_msg = {
+                            let tm = server.table_manager.lock().await;
+                            if let Some(table) = tm.get_table(&table_id) {
+                                if let Some(hand) = &table.current_hand {
+                                    let time_remaining_ms = table.config.action_timeout_secs * 1000;
+                                    let acting_seat = hand.betting.acting_seat(hand.button_position);
+                                    Some(create_hand_state_message(
+                                        hand,
+                                        table_id.clone(),
+                                        seat,
+                                        acting_seat,
+                                        time_remaining_ms,
+                                    ))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(msg) = hand_state_msg {
+                            if tx.send(msg).is_err() {
+                                server.cleanup_connection(current_table.as_ref(), current_seat).await;
+                                break Ok(());
+                            }
+                        }
                     }
                     Err(e) => {
                         let error = Message::Error {
@@ -279,6 +330,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             original_type: "join_table".to_string(),
                         };
                         if tx.send(error).is_err() {
+                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
                         // Unregister this connection if it was registered
@@ -296,10 +348,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 if tx.send(heartbeat).is_err() {
+                    server.cleanup_connection(current_table.as_ref(), current_seat).await;
                     break Ok(());
                 }
             }
-            Message::Action { version, hand_id, kind, amount } => {
+            Message::Action { version: _, hand_id, kind, amount } => {
                 // Validate seat and table
                 let (table_id, seat) = match (current_table.as_ref(), current_seat) {
                     (Some(table_id), Some(seat)) => (table_id.clone(), seat),
@@ -311,6 +364,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             original_type: "action".to_string(),
                         };
                         if tx.send(error).is_err() {
+                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
                         continue;
@@ -329,6 +383,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             original_type: "action".to_string(),
                         };
                         if tx.send(error).is_err() {
+                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
                         continue;
@@ -345,6 +400,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             original_type: "action".to_string(),
                         };
                         if tx.send(error).is_err() {
+                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
                         continue;
@@ -361,6 +417,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         original_type: "action".to_string(),
                     };
                     if tx.send(error).is_err() {
+                        server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());
                     }
                     continue;
@@ -377,6 +434,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         original_type: "action".to_string(),
                     };
                     if tx.send(error).is_err() {
+                        server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());
                     }
                     continue;
@@ -652,8 +710,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     message: "message not allowed in current state".to_string(),
                     original_type: "unknown".to_string(),
                 };
-                if tx.send(error).is_err() {
-                    break Ok(());
+                    if tx.send(error).is_err() {
+                        server.cleanup_connection(current_table.as_ref(), current_seat).await;
+                        break Ok(());
                 }
             }
         }

@@ -2,13 +2,14 @@ use super::cards::CardWidget;
 use super::chips::ChipStackWidget;
 use crate::connection::Connection;
 use anyhow::anyhow;
-use egui::{Color32, Pos2, Rect, Shape, Stroke, Ui};
+use egui::{Color32, Pos2, Rect, Stroke, Ui};
 use game_engine::{ActionKind, Card, Pot, Street};
 use server::protocol::messages::{HandState as ServerHandState, Message};
 use tokio::runtime::Runtime;
 
 pub struct TableView {
     pub player_seat: u8,
+    #[allow(dead_code)]
     pub table_id: game_engine::TableId,
     pub hand_id: Option<game_engine::HandId>,
     pub community_cards: Vec<Card>,
@@ -71,6 +72,7 @@ impl TableView {
         })?;
         match response {
             Message::HandState {
+                version: _,
                 hand_id,
                 table_id,
                 hole_cards,
