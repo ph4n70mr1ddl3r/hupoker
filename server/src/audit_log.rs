@@ -4,7 +4,9 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
 };
-use game_engine::{HandId, TableId};
+use chrono::{DateTime, Utc};
+use game_engine::{ActionKind, HandId, TableId};
+use getrandom::getrandom;
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -21,17 +23,22 @@ pub enum AuditEvent {
         hand_id: HandId,
         table_id: TableId,
         rng_seed_encrypted: String, // base64 encrypted seed
+        nonce: String,              // base64 nonce used for encryption
+        timestamp: DateTime<Utc>,
     },
     Action {
         hand_id: HandId,
         seat: u8,
         kind: String,
         amount: Option<u64>,
+        timestamp: DateTime<Utc>,
     },
     HandEnd {
         hand_id: HandId,
+        table_id: TableId,
         winner_seats: Vec<u8>,
         pot_amount: u64,
+        timestamp: DateTime<Utc>,
     },
 }
 
@@ -62,19 +69,64 @@ impl AuditLog {
     /// Log a hand start event with the given seed and hand ID.
     /// If encryption is enabled, the seed is encrypted before logging.
     pub fn log_seed(&mut self, hand_id: HandId, table_id: &TableId, seed: &[u8; 32]) -> Result<()> {
-        let rng_seed_encrypted = match &self.cipher {
+        let (nonce, rng_seed_encrypted) = match &self.cipher {
             Some(cipher) => {
-                // Use zero nonce (should be unique per encryption; for simplicity we use zero)
-                let nonce = Nonce::from_slice(&[0u8; 12]);
+                // Generate random nonce
+                let mut nonce_bytes = [0u8; 12];
+                getrandom(&mut nonce_bytes)
+                    .map_err(|e| anyhow::anyhow!("failed to generate nonce: {}", e))?;
+                let nonce = Nonce::from_slice(&nonce_bytes);
                 let encrypted = cipher
                     .encrypt(nonce, seed.as_ref())
                     .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
-                general_purpose::STANDARD.encode(encrypted)
+                (
+                    general_purpose::STANDARD.encode(nonce_bytes),
+                    general_purpose::STANDARD.encode(encrypted),
+                )
             }
-            None => general_purpose::STANDARD.encode(seed),
+            None => ("".to_string(), general_purpose::STANDARD.encode(seed)),
         };
-        let event =
-            AuditEvent::HandStart { hand_id, table_id: table_id.clone(), rng_seed_encrypted };
+        let event = AuditEvent::HandStart {
+            hand_id,
+            table_id: table_id.clone(),
+            rng_seed_encrypted,
+            nonce,
+            timestamp: Utc::now(),
+        };
+        self.log_event(event)
+    }
+
+    pub fn log_action(
+        &mut self,
+        hand_id: HandId,
+        seat: u8,
+        kind: ActionKind,
+        amount: Option<u64>,
+    ) -> Result<()> {
+        let event = AuditEvent::Action {
+            hand_id,
+            seat,
+            kind: kind.to_string(),
+            amount,
+            timestamp: Utc::now(),
+        };
+        self.log_event(event)
+    }
+
+    pub fn log_hand_end(
+        &mut self,
+        hand_id: HandId,
+        table_id: &TableId,
+        winner_seats: Vec<u8>,
+        pot_amount: u64,
+    ) -> Result<()> {
+        let event = AuditEvent::HandEnd {
+            hand_id,
+            table_id: table_id.clone(),
+            winner_seats,
+            pot_amount,
+            timestamp: Utc::now(),
+        };
         self.log_event(event)
     }
 
@@ -86,5 +138,32 @@ impl AuditLog {
             .encrypt(nonce, seed.as_ref())
             .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
         Ok(general_purpose::STANDARD.encode(encrypted))
+    }
+
+    pub fn decrypt_seed(
+        encrypted_seed_b64: &str,
+        nonce_b64: &str,
+        key: &[u8; 32],
+    ) -> Result<[u8; 32]> {
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+        let nonce_bytes = general_purpose::STANDARD
+            .decode(nonce_b64)
+            .map_err(|e| anyhow::anyhow!("failed to decode nonce: {}", e))?;
+        if nonce_bytes.len() != 12 {
+            return Err(anyhow::anyhow!("nonce must be 12 bytes"));
+        }
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let encrypted = general_purpose::STANDARD
+            .decode(encrypted_seed_b64)
+            .map_err(|e| anyhow::anyhow!("failed to decode encrypted seed: {}", e))?;
+        let seed = cipher
+            .decrypt(nonce, encrypted.as_ref())
+            .map_err(|e| anyhow::anyhow!("seed decryption failed: {}", e))?;
+        if seed.len() != 32 {
+            return Err(anyhow::anyhow!("decrypted seed must be 32 bytes"));
+        }
+        let mut seed_array = [0u8; 32];
+        seed_array.copy_from_slice(&seed);
+        Ok(seed_array)
     }
 }

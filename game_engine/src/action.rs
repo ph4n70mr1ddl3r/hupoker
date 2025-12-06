@@ -12,6 +12,7 @@ pub struct Action {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Possible kinds of poker actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionKind {
     Fold,
@@ -21,7 +22,22 @@ pub enum ActionKind {
     Raise,
 }
 
+impl std::fmt::Display for ActionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActionKind::Fold => write!(f, "Fold"),
+            ActionKind::Check => write!(f, "Check"),
+            ActionKind::Call => write!(f, "Call"),
+            ActionKind::Bet => write!(f, "Bet"),
+            ActionKind::Raise => write!(f, "Raise"),
+        }
+    }
+}
+
 impl Action {
+    /// Validates that the action is semantically correct.
+    ///
+    /// Returns `Ok(())` if valid, otherwise an error string.
     pub fn validate(&self) -> Result<(), String> {
         if !super::hand::seat_is_valid(self.seat) {
             return Err(format!("invalid seat {}", self.seat));

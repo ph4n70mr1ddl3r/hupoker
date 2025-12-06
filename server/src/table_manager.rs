@@ -1,5 +1,5 @@
-use chrono::Utc;
-use game_engine::{HandId, Player, Table, TableId};
+use chrono::{Duration, Utc};
+use game_engine::{HandId, Player, Seat, Table, TableId};
 
 pub struct TableManager {
     tables: Vec<Table>,
@@ -39,7 +39,8 @@ impl TableManager {
             // Seat occupied; check if disconnected and within reconnection timeout
             if let Some(disconnected_at) = existing_player.disconnected_at {
                 let elapsed = Utc::now() - disconnected_at;
-                let timeout = chrono::Duration::seconds(table.config.reconnection_timeout_secs as i64);
+                let timeout =
+                    chrono::Duration::seconds(table.config.reconnection_timeout_secs as i64);
                 if elapsed < timeout {
                     // Allow reconnection: replace player, clear disconnected_at
                     // Ensure player seat matches
@@ -62,7 +63,7 @@ impl TableManager {
                 return Err("seat already occupied".to_string());
             }
         }
-        // At this point, seat is empty (or just cleared)
+
         // Ensure player seat matches
         if player.seat != seat {
             return Err("player seat does not match".to_string());
@@ -96,6 +97,35 @@ impl TableManager {
         } else {
             false
         }
+    }
+
+    /// Check all tables for players who have exceeded their action timeout.
+    /// Returns a vector of (table_id, seat) for each player that should auto‑fold.
+    pub fn check_action_timeouts(&self) -> Vec<(TableId, Seat)> {
+        let mut timed_out = Vec::new();
+        let now = Utc::now();
+
+        for table in &self.tables {
+            // Only check tables with an active hand
+            let Some(hand) = &table.current_hand else {
+                continue;
+            };
+            // Determine whose turn it is
+            let Some(acting_seat) = hand.betting.acting_seat(hand.button_position) else {
+                continue; // no one to act (hand finished)
+            };
+            // Get the timeout duration from table config
+            let timeout_secs = table.config.action_timeout_secs;
+            let timeout = Duration::seconds(timeout_secs as i64);
+            // Check if last_action_time exists and is older than timeout
+            if let Some(last_action_time) = hand.last_action_time {
+                let elapsed = now - last_action_time;
+                if elapsed > timeout {
+                    timed_out.push((table.id.clone(), acting_seat));
+                }
+            }
+        }
+        timed_out
     }
 }
 

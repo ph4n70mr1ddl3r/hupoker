@@ -5,7 +5,7 @@ release/
 *.rs.bk
 *.rlib
 *.prof*
-Cargo.lock  # Keep for binaries, but some ignore; we'll keep but optional
+# Cargo.lock  # Keep for binaries, but some ignore; we'll keep but optional
 
 # IDE
 .vscode/

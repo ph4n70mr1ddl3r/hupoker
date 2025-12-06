@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time;
+
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
@@ -10,7 +10,7 @@ use crate::{
     audit_log::AuditLog, connection_manager::ConnectionManager,
     hand_state::create_hand_state_message, table_manager::TableManager,
 };
-use game_engine::{Action, ActionKind, Hand, Seat, ServerConfig, Street, TableId};
+use game_engine::{Action, ActionKind, ServerConfig, Street};
 
 #[derive(Clone)]
 pub struct Server {
@@ -113,6 +113,156 @@ impl Server {
             })
             .await;
         Some(hand_id)
+    }
+
+    pub async fn apply_auto_fold(&self, table_id: game_engine::TableId, seat: game_engine::Seat) {
+        use chrono::Utc;
+        use game_engine::{Action, ActionKind};
+        use tracing::error;
+
+        let mut tm = self.table_manager.lock().await;
+        let table = match tm.get_table_mut(&table_id) {
+            Some(table) => table,
+            None => return,
+        };
+        let hand = match table.current_hand.as_mut() {
+            Some(hand) => hand,
+            None => return,
+        };
+        // Verify it's this seat's turn (should be true if timeout detected)
+        let acting_seat = hand.betting.acting_seat(hand.button_position);
+        if acting_seat != Some(seat) {
+            return;
+        }
+        // Create fold action
+        let action = Action { seat, kind: ActionKind::Fold, amount: None, timestamp: Utc::now() };
+        // Apply action
+        if let Err(e) = hand.apply_action(action.clone()) {
+            error!("failed to apply auto-fold: {}", e);
+            return;
+        }
+        // Log action
+        {
+            let mut audit_log = self.audit_log.lock().await;
+            if let Err(e) = audit_log.log_action(hand.id, seat, action.kind, action.amount) {
+                error!("failed to log auto-fold action: {}", e);
+            }
+        }
+        // Clone hand for broadcasting and hand end processing
+        let hand_clone = hand.clone();
+        let config = table.config.clone();
+        drop(tm); // release lock before broadcasting
+
+        // Broadcast updated hand state (fold action applied)
+        let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
+        let time_remaining_ms = config.action_timeout_secs * 1000;
+        self.connection_manager
+            .broadcast_to_table(&table_id, |player_seat| {
+                crate::hand_state::create_hand_state_message(
+                    &hand_clone,
+                    table_id.clone(),
+                    player_seat,
+                    next_acting_seat,
+                    time_remaining_ms,
+                )
+            })
+            .await;
+
+        // Hand ends due to fold; evaluate winner and award pot
+        let winners = hand_clone.evaluate_winner();
+        // Log hand end to audit log (already done in manual fold block, but we need to do here)
+        {
+            let pot_total = hand_clone.pot.main
+                + hand_clone.pot.side_pots.iter().map(|p| p.amount).sum::<u64>();
+            let mut audit_log = self.audit_log.lock().await;
+            if let Err(e) =
+                audit_log.log_hand_end(hand_clone.id, &table_id, winners.clone(), pot_total)
+            {
+                error!("failed to log hand end: {}", e);
+            }
+        }
+        if winners.is_empty() {
+            // Should not happen, but if no winners, just reset hand
+            let mut tm = self.table_manager.lock().await;
+            let table = tm.get_table_mut(&table_id).expect("table must exist");
+            table.current_hand = None;
+            // Broadcast updated TableState (no stack changes)
+            let table_clone = table.clone();
+            drop(tm);
+            let table_state = crate::protocol::messages::Message::TableState {
+                version: "1.0".to_string(),
+                table_id: table_id.clone(),
+                seats: table_clone
+                    .seats
+                    .iter()
+                    .enumerate()
+                    .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                        seat: i as u8,
+                        player: maybe_player.clone(),
+                    })
+                    .collect(),
+                config: table_clone.config.clone(),
+                current_hand_id: None,
+            };
+            self.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+        } else {
+            // Award pot(s) to winners (same logic as showdown but no side pots expected)
+            let button = hand_clone.button_position;
+            let mut pots = vec![(hand_clone.pot.main, vec![0, 1])]; // main pot eligible for both seats
+            for side_pot in &hand_clone.pot.side_pots {
+                pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
+            }
+            let mut awards = [0u64, 0u64];
+            for (amount, eligible_seats) in pots {
+                let eligible_winners: Vec<_> =
+                    winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
+                if eligible_winners.is_empty() {
+                    continue;
+                }
+                let share = amount / eligible_winners.len() as u64;
+                let remainder = amount % eligible_winners.len() as u64;
+                for (idx, &seat) in eligible_winners.iter().enumerate() {
+                    let mut award = share;
+                    if idx == 0 && remainder > 0 {
+                        let mut sorted = eligible_winners.clone();
+                        sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
+                        if seat == sorted[0] {
+                            award += remainder;
+                        }
+                    }
+                    awards[seat as usize] += award;
+                }
+            }
+            // Update player stacks in table seats
+            let mut tm = self.table_manager.lock().await;
+            let table = tm.get_table_mut(&table_id).expect("table must exist");
+            for (seat, award) in awards.iter().enumerate() {
+                if let Some(player) = table.seats[seat].as_mut() {
+                    player.stack += award;
+                }
+            }
+            // Reset current hand
+            table.current_hand = None;
+            // Broadcast updated TableState
+            let table_clone = table.clone();
+            drop(tm);
+            let table_state = crate::protocol::messages::Message::TableState {
+                version: "1.0".to_string(),
+                table_id: table_id.clone(),
+                seats: table_clone
+                    .seats
+                    .iter()
+                    .enumerate()
+                    .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                        seat: i as u8,
+                        player: maybe_player.clone(),
+                    })
+                    .collect(),
+                config: table_clone.config.clone(),
+                current_hand_id: None,
+            };
+            self.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+        }
     }
 
     /// Mark a player as disconnected and unregister their connection.
@@ -447,6 +597,13 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     }
                     continue;
                 }
+                // Log action to audit log
+                {
+                    let mut audit_log = server.audit_log.lock().await;
+                    if let Err(e) = audit_log.log_action(hand.id, seat, kind, amount) {
+                        error!("failed to log action: {}", e);
+                    }
+                }
                 // Success: broadcast updated hand state
                 let config = table.config.clone();
                 let hand_clone = hand.clone();
@@ -472,6 +629,20 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 if action.kind == ActionKind::Fold {
                     // Evaluate winner (should be the other player)
                     let winners = hand_clone.evaluate_winner();
+                    // Log hand end to audit log
+                    {
+                        let pot_total = hand_clone.pot.main
+                            + hand_clone.pot.side_pots.iter().map(|p| p.amount).sum::<u64>();
+                        let mut audit_log = server.audit_log.lock().await;
+                        if let Err(e) = audit_log.log_hand_end(
+                            hand_clone.id,
+                            &table_id,
+                            winners.clone(),
+                            pot_total,
+                        ) {
+                            error!("failed to log hand end: {}", e);
+                        }
+                    }
                     if winners.is_empty() {
                         // Should not happen, but if no winners, just reset hand
                         let mut tm = server.table_manager.lock().await;
@@ -602,6 +773,25 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         if hand_clone.current_street == Street::Showdown {
                             // Evaluate winners
                             let winners = hand_clone.evaluate_winner();
+                            // Log hand end to audit log
+                            {
+                                let pot_total = hand_clone.pot.main
+                                    + hand_clone
+                                        .pot
+                                        .side_pots
+                                        .iter()
+                                        .map(|p| p.amount)
+                                        .sum::<u64>();
+                                let mut audit_log = server.audit_log.lock().await;
+                                if let Err(e) = audit_log.log_hand_end(
+                                    hand_clone.id,
+                                    &table_id,
+                                    winners.clone(),
+                                    pot_total,
+                                ) {
+                                    error!("failed to log hand end: {}", e);
+                                }
+                            }
                             if winners.is_empty() {
                                 // Should not happen, but if no winners, just reset hand
                                 let mut tm = server.table_manager.lock().await;

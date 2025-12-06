@@ -47,7 +47,6 @@ impl TestClient {
 /// should be auto‑folded.
 /// This test is ignored until server‑side timeout enforcement is implemented (T049–T051).
 #[tokio::test]
-#[ignore]
 async fn action_timeout_auto_fold() -> Result<()> {
     // Create a temporary listener to get a free port
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

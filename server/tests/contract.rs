@@ -3,7 +3,7 @@ use game_engine::{
     Action, ActionKind, Card, ConnectionId, HandId, Player, Pot, Rank, Street, Suit, TableConfig,
     TableId,
 };
-use serde_json;
+
 use server::protocol::messages::*;
 use uuid::Uuid;
 
@@ -175,7 +175,7 @@ fn hand_state_serialization() {
             community_cards: decoded_community_cards,
             pot: decoded_pot,
             current_street,
-            actions: decoded_actions,
+            actions: _decoded_actions,
             player_stacks,
             button_position,
             last_action_time: _,

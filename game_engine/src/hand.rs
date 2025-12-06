@@ -89,7 +89,7 @@ impl Hand {
             actions: Vec::new(),
             player_stacks,
             button_position,
-            last_action_time: None,
+            last_action_time: Some(Utc::now()),
         }
     }
 
@@ -102,6 +102,7 @@ impl Hand {
         self.pot.main += self.betting.total_pot();
         // Reset betting for next street with current stacks
         self.betting = super::betting::Betting::new_street(self.big_blind, self.betting.stacks());
+        self.last_action_time = Some(Utc::now());
         // Deal community cards based on street
         match self.current_street {
             Street::PreFlop => {

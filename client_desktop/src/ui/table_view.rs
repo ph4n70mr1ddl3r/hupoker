@@ -21,6 +21,10 @@ pub struct TableView {
     pub hole_cards: Vec<Card>, // for the current player
     pub connection: Option<Connection>,
     pub error_message: Option<String>,
+    pub time_remaining_ms: Option<u64>,
+    pub time_remaining_received: Option<f64>,
+    pub last_sent_action: Option<ActionKind>,
+    pub notification: Option<String>,
 }
 
 impl TableView {
@@ -42,6 +46,10 @@ impl TableView {
             hole_cards: Vec::new(),
             connection,
             error_message: None,
+            time_remaining_ms: None,
+            time_remaining_received: None,
+            last_sent_action: None,
+            notification: None,
         }
     }
 
@@ -50,6 +58,7 @@ impl TableView {
     }
 
     pub fn update_from_hand_state(&mut self, hand_state: &ServerHandState) {
+        self.notification = None;
         self.hand_id = Some(hand_state.hand_id);
         self.community_cards = hand_state.community_cards.clone();
         self.pot = hand_state.pot.clone();
@@ -59,6 +68,39 @@ impl TableView {
         self.acting_seat = hand_state.acting_seat;
         // hole_cards are already filtered for this player by server
         self.hole_cards = hand_state.hole_cards.clone();
+        self.time_remaining_ms = Some(hand_state.time_remaining_ms);
+        self.time_remaining_received = None; // will be set when UI updates
+
+        // Detect timeout fold
+        if let Some(last_action) = hand_state.actions.last() {
+            if last_action.kind == ActionKind::Fold {
+                let fold_seat = last_action.seat;
+                let is_our_fold = fold_seat == self.player_seat;
+                let was_manual = self.last_sent_action == Some(ActionKind::Fold);
+                if is_our_fold && !was_manual {
+                    self.notification = Some("You folded due to timeout".to_string());
+                } else if !is_our_fold {
+                    self.notification = Some(format!("Player {} folded due to timeout", fold_seat));
+                }
+                // Clear last_sent_action after processing
+                self.last_sent_action = None;
+            }
+        }
+    }
+
+    fn current_time_remaining_ms(&mut self, ui_time: f64) -> Option<u64> {
+        let remaining = self.time_remaining_ms?;
+        if let Some(received) = self.time_remaining_received {
+            let elapsed_secs = ui_time - received;
+            let elapsed_ms = (elapsed_secs * 1000.0).round() as u64;
+            if elapsed_ms >= remaining {
+                return Some(0);
+            }
+            Some(remaining - elapsed_ms)
+        } else {
+            self.time_remaining_received = Some(ui_time);
+            Some(remaining)
+        }
     }
 
     fn handle_action(
@@ -70,6 +112,7 @@ impl TableView {
         let conn = self.connection.as_mut().ok_or_else(|| anyhow!("no connection"))?;
         let rt = Runtime::new()?;
         self.error_message = None;
+        self.last_sent_action = Some(kind);
         let response = rt.block_on(async {
             conn.send_action(hand_id, kind, amount).await?;
             conn.receive_message().await
@@ -168,6 +211,26 @@ impl TableView {
 
         // Draw street
         ui.label(format!("Street: {:?}", self.current_street));
+        // Draw acting seat and time remaining
+        if let Some(seat) = self.acting_seat {
+            let ui_time = ui.input(|i| i.time);
+            if let Some(remaining_ms) = self.current_time_remaining_ms(ui_time) {
+                let remaining_secs = remaining_ms as f32 / 1000.0;
+                let color = if remaining_secs > 10.0 {
+                    Color32::GREEN
+                } else if remaining_secs > 5.0 {
+                    Color32::YELLOW
+                } else {
+                    Color32::RED
+                };
+                ui.colored_label(
+                    color,
+                    format!("Acting: Player {} ({} seconds remaining)", seat, remaining_secs),
+                );
+            } else {
+                ui.label(format!("Acting: Player {}", seat));
+            }
+        }
 
         // Draw hole cards (for current player)
         if !self.hole_cards.is_empty() {
@@ -190,6 +253,10 @@ impl TableView {
         // Show error message if any
         if let Some(err) = &self.error_message {
             ui.colored_label(Color32::RED, err);
+        }
+        // Show notification (e.g., timeout fold)
+        if let Some(notification) = &self.notification {
+            ui.colored_label(Color32::BLUE, notification);
         }
 
         // Action buttons

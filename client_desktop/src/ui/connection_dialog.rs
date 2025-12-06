@@ -105,16 +105,17 @@ impl ConnectionDialog {
 
         let address = self.server_address.clone();
         let rt = Runtime::new().unwrap();
-        let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> = rt.block_on(async {
-            // Connect TCP
-            let mut conn = Connection::connect(&address).await?;
-            // Perform handshake
-            conn.handshake("hupoker-client", "0.1.0").await?;
-            // Join default table (table-0) seat 0
-            let table_id = game_engine::TableId::new("table-0".to_string());
-            let (table_state, hand_states) = conn.join_table(table_id, 0).await?;
-            Ok((conn, table_state, hand_states))
-        });
+        let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
+            rt.block_on(async {
+                // Connect TCP
+                let mut conn = Connection::connect(&address).await?;
+                // Perform handshake
+                conn.handshake("hupoker-client", "0.1.0").await?;
+                // Join default table (table-0) seat 0
+                let table_id = game_engine::TableId::new("table-0".to_string());
+                let (table_state, hand_states) = conn.join_table(table_id, 0).await?;
+                Ok((conn, table_state, hand_states))
+            });
         match result {
             Ok((conn, table_state, hand_states)) => {
                 let table_id = table_state.table_id.clone();
@@ -181,12 +182,13 @@ impl ConnectionDialog {
         let seat = seat.unwrap();
 
         let rt = Runtime::new().unwrap();
-        let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> = rt.block_on(async {
-            let mut conn = Connection::connect(&address).await?;
-            conn.handshake("hupoker-client", "0.1.0").await?;
-            let (table_state, hand_states) = conn.join_table(table_id, seat).await?;
-            Ok((conn, table_state, hand_states))
-        });
+        let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
+            rt.block_on(async {
+                let mut conn = Connection::connect(&address).await?;
+                conn.handshake("hupoker-client", "0.1.0").await?;
+                let (table_state, hand_states) = conn.join_table(table_id, seat).await?;
+                Ok((conn, table_state, hand_states))
+            });
 
         match result {
             Ok((conn, table_state, hand_states)) => {
@@ -198,7 +200,10 @@ impl ConnectionDialog {
                 self.reconnect_attempts = 0;
             }
             Err(e) => {
-                self.error_message = Some(format!("Reconnection failed (attempt {}): {}", self.reconnect_attempts, e));
+                self.error_message = Some(format!(
+                    "Reconnection failed (attempt {}): {}",
+                    self.reconnect_attempts, e
+                ));
                 // Stay in Reconnecting state; will retry later
             }
         }

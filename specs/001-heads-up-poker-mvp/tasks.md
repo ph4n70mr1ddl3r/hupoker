@@ -139,16 +139,16 @@
 
 ### Tests for User Story 4 (Optional)
 
-- [ ] T047 [P] [US4] Integration test for action timeout in `tests/integration/timeout.rs`
+- [X] T047 [P] [US4] Integration test for action timeout in `tests/integration.rs` (as `action_timeout_auto_fold`)
 
 ### Implementation for User Story 4
 
-- [ ] T048 [US4] Add `last_action_time: Option<Instant>` to `Hand` (already in data‑model)
-- [ ] T049 [US4] Server: check each hand for timeout on each tick (e.g., every second)
-- [ ] T050 [US4] If timeout exceeded, apply auto‑fold action (call `hand.apply_action` with `ActionKind::Fold`)
-- [ ] T051 [US4] Broadcast `HandState` update reflecting auto‑fold
-- [ ] T052 [US4] Client: display visual countdown timer for acting player
-- [ ] T053 [US4] Client: handle server‑initiated auto‑fold (show "folded by timeout" message)
+- [X] T048 [US4] Add `last_action_time: Option<Instant>` to `Hand` (already in data‑model) - implemented
+- [X] T049 [US4] Server: check each hand for timeout on each tick (e.g., every second) - implemented in `table_manager::check_action_timeouts`
+- [X] T050 [US4] If timeout exceeded, apply auto‑fold action (call `hand.apply_action` with `ActionKind::Fold`) - implemented in `server::apply_auto_fold`
+- [X] T051 [US4] Broadcast `HandState` update reflecting auto‑fold - implemented in `server::apply_auto_fold`
+- [X] T052 [US4] Client: display visual countdown timer for acting player - implemented in `table_view.rs` with colored countdown
+- [X] T053 [US4] Client: handle server‑initiated auto‑fold (show "folded by timeout" message) - implemented with notification system in `table_view.rs`
 
 **Checkpoint**: User Story 4 complete. Game flow continues even if a player stalls.
 
@@ -162,12 +162,12 @@
 
 ### Tests for User Story 5 (Already covered in previous phases)
 
-- [ ] T054 [P] [US5] Ensure all unit tests for game engine are written (T027) and pass
+- [X] T054 [P] [US5] Ensure all unit tests for game engine are written (T027) and pass - unit tests pass
 
 ### Implementation for User Story 5
 
-- [ ] T055 [US5] Add `#[cfg(test)]` modules to `game_engine` crate (already part of T027)
-- [ ] T056 [US5] Document how to run tests in `quickstart.md`
+- [X] T055 [US5] Add `#[cfg(test)]` modules to `game_engine` crate (already part of T027) - done
+- [X] T056 [US5] Document how to run tests in `quickstart.md` - already documented
 
 **Checkpoint**: User Story 5 complete. Game engine is fully testable.
 
@@ -181,13 +181,13 @@
 
 ### Tests for User Story 6 (Optional)
 
-- [ ] T057 [P] [US6] Unit test for audit log encryption/decryption in `tests/unit/audit_log_tests.rs`
+- [X] T057 [P] [US6] Unit test for audit log encryption/decryption in `tests/unit/audit_log_tests.rs`
 
 ### Implementation for User Story 6
 
-- [ ] T058 [US6] Ensure audit log writes each hand’s RNG seed (encrypted) and all public actions (unencrypted)
-- [ ] T059 [US6] Add command‑line tool or documentation for decrypting audit log (use same env var key)
-- [ ] T060 [US6] Log hand ID, table ID, timestamps, and final outcome
+- [X] T058 [US6] Ensure audit log writes each hand’s RNG seed (encrypted) and all public actions (unencrypted)
+- [X] T059 [US6] Add command‑line tool or documentation for decrypting audit log (use same env var key)
+- [X] T060 [US6] Log hand ID, table ID, timestamps, and final outcome
 
 **Checkpoint**: User Story 6 complete. Post‑hand fairness verification possible.
 
@@ -197,14 +197,14 @@
 
 **Purpose**: Improvements that affect multiple user stories.
 
-- [ ] T061 [P] Update `quickstart.md` with actual build/run instructions (after implementation)
-- [ ] T062 [P] Run `cargo fmt` and `cargo clippy` across workspace, fix any warnings
-- [ ] T063 [P] Add documentation comments to all public types/functions
-- [ ] T064 Ensure all error cases are handled gracefully (network errors, malformed messages, etc.)
-- [ ] T065 Performance: verify server action processing <50 ms p95, client UI responsive
-- [ ] T066 Security: validate no secrets logged, encryption key never hard‑coded
-- [ ] T067 Accessibility: color‑blind friendly card designs, readable fonts
-- [ ] T068 Run full test suite (`cargo test --workspace`) and ensure all tests pass
+- [X] T061 [P] Update `quickstart.md` with actual build/run instructions (after implementation)
+- [X] T062 [P] Run `cargo fmt` and `cargo clippy` across workspace, fix any warnings
+- [X] T063 [P] Add documentation comments to all public types/functions
+- [X] T064 Ensure all error cases are handled gracefully (network errors, malformed messages, etc.)
+- [X] T065 Performance: verify server action processing <50 ms p95, client UI responsive
+- [X] T066 Security: validate no secrets logged, encryption key never hard‑coded
+- [X] T067 Accessibility: color‑blind friendly card designs, readable fonts
+- [X] T068 Run full test suite (`cargo test --workspace`) and ensure all tests pass
 
 ---
 

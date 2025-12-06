@@ -171,7 +171,25 @@ cargo check --workspace
 | Audit log not writable | Permission denied on the log path | Create directory and set appropriate permissions. |
 | Missing encryption key | `HUPOKER_ENCRYPTION_KEY` not set | Export the environment variable before starting server. |
 
-## 12. Next Steps
+## 12. Audit Log Decryption
+
+The server writes an encrypted audit log containing RNG seeds and game actions. To inspect the log, use the `audit_log_decrypt` tool:
+
+```bash
+cd server
+cargo run --bin audit_log_decrypt -- ../path/to/audit.log
+```
+
+Set the `HUPOKER_ENCRYPTION_KEY` environment variable (same key used by the server) to decrypt seeds:
+
+```bash
+export HUPOKER_ENCRYPTION_KEY="$(openssl rand -base64 32 | xxd -p -c 32)"
+cargo run --bin audit_log_decrypt -- ../path/to/audit.log
+```
+
+The tool will print each event with timestamps, and decrypted seeds (if key is provided).
+
+## 13. Next Steps
 
 - Read the **data model** (`data‑model.md`) to understand core entities.
 - Study the **network protocol** (`contracts/protocol.md`) for client‑server communication.

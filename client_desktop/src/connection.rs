@@ -68,7 +68,8 @@ impl Connection {
         &mut self,
         table_id: game_engine::TableId,
         seat: u8,
-    ) -> Result<(server::protocol::messages::TableState, Vec<server::protocol::messages::HandState>)> {
+    ) -> Result<(server::protocol::messages::TableState, Vec<server::protocol::messages::HandState>)>
+    {
         let join = Message::JoinTable { version: "1.0".to_string(), table_id, seat };
         self.send_message(&join).await?;
 
@@ -137,10 +138,6 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::net::SocketAddr;
-    use tokio::net::TcpListener;
-    use tokio::spawn;
 
     #[tokio::test]
     #[ignore]

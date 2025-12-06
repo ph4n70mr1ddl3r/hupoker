@@ -1,6 +1,5 @@
 use chrono::Utc;
-use game_engine::{Action, ActionKind, Card, Hand, Rank, Suit};
-use uuid::Uuid;
+use game_engine::{Action, ActionKind, Hand};
 
 #[test]
 fn hand_deal_creates_valid_hand() {
@@ -89,7 +88,7 @@ fn hand_evaluate_winner_fold() {
 #[test]
 fn hand_evaluate_winner_showdown() {
     let seed = [0u8; 32];
-    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
+    let hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
     // Simulate both players staying until showdown (no folds)
     // Need to advance streets and complete betting rounds (by checking)
     // For simplicity, we'll just evaluate winner without any actions (both active)
