@@ -1,6 +1,6 @@
 use chrono::Utc;
 use game_engine::{
-    Action, Card, ConnectionId, HandId, Player, Pot, Rank, Street, Suit, TableConfig, TableId,
+    Action, ActionKind, Card, ConnectionId, HandId, Player, Pot, Rank, Street, Suit, TableConfig, TableId,
 };
 use serde_json;
 use server::protocol::messages::*;
@@ -51,7 +51,7 @@ fn action_message_serialization() {
     let msg = Message::Action {
         version: "1.0".to_string(),
         hand_id,
-        kind: "Raise".to_string(),
+        kind: ActionKind::Raise,
         amount: Some(100),
     };
     let json = serde_json::to_string(&msg).unwrap();
@@ -60,7 +60,7 @@ fn action_message_serialization() {
         Message::Action { version, hand_id: decoded_hand_id, kind, amount } => {
             assert_eq!(version, "1.0");
             assert_eq!(decoded_hand_id, hand_id);
-            assert_eq!(kind, "Raise");
+            assert_eq!(kind, ActionKind::Raise);
             assert_eq!(amount, Some(100));
         }
         _ => panic!("wrong message type"),

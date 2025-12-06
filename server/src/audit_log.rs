@@ -9,7 +9,7 @@ use serde::Serialize;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use uuid::Uuid;
+
 
 pub struct AuditLog {
     writer: BufWriter<File>,

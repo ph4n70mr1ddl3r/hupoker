@@ -94,15 +94,15 @@
 
 - [X] T029 [US2] Extend `table_manager` to start a hand when both seats are occupied (create `Hand` via game engine)
 - [X] T030 [US2] Implement `HandState` message generation (include hole cards only for respective player)
-- [ ] T031 [US2] Broadcast `HandState` to both clients on hand start, each action, street advance, hand end
+- [X] T031 [US2] Broadcast `HandState` to both clients on hand start, each action, street advance, hand end
 - [ ] T032 [P] [US2] Add UI table view showing community cards, pot, player stacks, and action buttons in `client_desktop/src/ui/table_view.rs`
 - [ ] T033 [P] [US2] Render card graphics (simple rectangles with rank/suit) in `client_desktop/src/ui/cards.rs`
 - [ ] T034 [P] [US2] Render chip stacks and pot in `client_desktop/src/ui/chips.rs`
 - [ ] T035 [US2] Implement action buttons (Fold, Check, Call, Bet, Raise) with validation (disable illegal actions)
 - [ ] T036 [US2] Send `Action` message when player clicks a button; update UI after server response
-- [ ] T037 [US2] Server‑side validation of `Action` messages (turn order, bet size, legality) using game engine
-- [ ] T038 [US2] Update `Hand` state after valid action; broadcast new `HandState`
-- [ ] T039 [US2] Handle showdown: evaluate winner via game engine, award pot, update player stacks, broadcast hand result
+- [X] T037 [US2] Server‑side validation of `Action` messages (turn order, bet size, legality) using game engine
+- [X] T038 [US2] Update `Hand` state after valid action; broadcast new `HandState`
+- [X] T039 [US2] Handle showdown: evaluate winner via game engine, award pot, update player stacks, broadcast hand result
 
 **Checkpoint**: User Story 2 complete. Two human players can play a full NLHE hand via the GUI. MVP gameplay achieved.
 

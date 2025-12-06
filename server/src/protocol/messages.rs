@@ -1,4 +1,4 @@
-use game_engine::{Action, Card, HandId, Player, Pot, Street, TableConfig, TableId};
+use game_engine::{Action, ActionKind, Card, HandId, Player, Pot, Street, TableConfig, TableId};
 use serde::{Deserialize, Serialize};
 
 /// All possible messages (client‑to‑server and server‑to‑client).
@@ -19,7 +19,7 @@ pub enum Message {
     Action {
         version: String,
         hand_id: HandId,
-        kind: String, // "Fold", "Check", "Call", "Bet", "Raise"
+        kind: ActionKind, // "Fold", "Check", "Call", "Bet", "Raise"
         amount: Option<u64>,
     },
     Heartbeat {
@@ -88,7 +88,7 @@ pub struct JoinTable {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionMessage {
     pub hand_id: HandId,
-    pub kind: String,
+    pub kind: ActionKind,
     pub amount: Option<u64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

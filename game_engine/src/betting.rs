@@ -224,11 +224,32 @@ impl Betting {
     /// Mark that a player has acted this round. If both players have acted and bets are equal,
     /// the betting round is complete.
     fn mark_action(&mut self, seat: Seat) {
-        // Mark this seat as acted
+        // Mark this site as acted
         self.acted_this_round[seat as usize] = true;
         // If both players have acted and bets are equal, round is complete
         if self.acted_this_round[0] && self.acted_this_round[1] && self.bets[0] == self.bets[1] {
             self.round_complete = true;
+        }
+    }
+
+    /// Returns the seat that should act next, or None if the betting round is complete.
+    pub fn acting_seat(&self, button_position: Seat) -> Option<Seat> {
+        if self.round_complete {
+            return None;
+        }
+        // Determine which seats have acted this round
+        if !self.acted_this_round[0] && !self.acted_this_round[1] {
+            // No one has acted yet; first to act is button_position
+            Some(button_position)
+        } else if self.acted_this_round[0] && !self.acted_this_round[1] {
+            // Seat 0 acted, seat 1 hasn't
+            Some(1)
+        } else if !self.acted_this_round[0] && self.acted_this_round[1] {
+            // Seat 1 acted, seat 0 hasn't
+            Some(0)
+        } else {
+            // Both have acted (but round not complete?) should not happen
+            None
         }
     }
 }

@@ -9,7 +9,7 @@ use crate::{
     audit_log::AuditLog, connection_manager::ConnectionManager,
     hand_state::create_hand_state_message, table_manager::TableManager,
 };
-use game_engine::ServerConfig;
+use game_engine::{Action, ActionKind, ServerConfig, Street};
 
 #[derive(Clone)]
 pub struct Server {
@@ -100,7 +100,7 @@ impl Server {
                   // Broadcast HandState to both seats
         self.connection_manager
             .broadcast_to_table(table_id, |seat| {
-                let acting_seat = hand_clone.button_position; // small blind acts first preflop
+                let acting_seat = button_position; // small blind acts first preflop
                 let time_remaining_ms = config.action_timeout_secs * 1000;
                 create_hand_state_message(
                     &hand_clone,
@@ -216,7 +216,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         original_type: "join_table".to_string(),
                     };
                     if tx.send(error).is_err() {
-                        break;
+                        break Ok(());
                     }
                     continue;
                 }
@@ -267,7 +267,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             current_hand_id,
                         };
                         if tx.send(table_state).is_err() {
-                            break;
+                            break Ok(());
                         }
                         // TODO: if hand started, broadcast HandState
                     }
@@ -279,11 +279,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             original_type: "join_table".to_string(),
                         };
                         if tx.send(error).is_err() {
-                            break;
+                            break Ok(());
                         }
                         // Unregister this connection if it was registered
-                        if let (Some(table_id), Some(seat)) = (current_table, current_seat) {
-                            server.connection_manager.unregister(&table_id, seat).await;
+                        if let (Some(table_id), Some(seat)) = (current_table.as_ref(), current_seat) {
+                            server.connection_manager.unregister(table_id, seat).await;
                         }
                     }
                 }
@@ -295,7 +295,294 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
                 if tx.send(heartbeat).is_err() {
-                    break;
+                    break Ok(());
+                }
+            }
+            Message::Action { version, hand_id, kind, amount } => {
+                // Validate seat and table
+                let (table_id, seat) = match (current_table.as_ref(), current_seat) {
+                    (Some(table_id), Some(seat)) => (table_id.clone(), seat),
+                    _ => {
+                        let error = Message::Error {
+                            version: "1.0".to_string(),
+                            code: "not_at_table".to_string(),
+                            message: "must join a table before acting".to_string(),
+                            original_type: "action".to_string(),
+                        };
+                        if tx.send(error).is_err() { break Ok(()); }
+                        continue;
+                    }
+                };
+                // Lock table manager and get hand
+                let mut tm = server.table_manager.lock().await;
+                let table = match tm.get_table_mut(&table_id) {
+                    Some(table) => table,
+                    None => {
+                        drop(tm);
+                        let error = Message::Error {
+                            version: "1.0".to_string(),
+                            code: "table_not_found".to_string(),
+                            message: "table no longer exists".to_string(),
+                            original_type: "action".to_string(),
+                        };
+                        if tx.send(error).is_err() { break Ok(()); }
+                        continue;
+                    }
+                };
+                let hand = match table.current_hand.as_mut() {
+                    Some(hand) if hand.id == hand_id => hand,
+                    _ => {
+                        drop(tm);
+                        let error = Message::Error {
+                            version: "1.0".to_string(),
+                            code: "hand_not_found".to_string(),
+                            message: "hand not found or not active".to_string(),
+                            original_type: "action".to_string(),
+                        };
+                        if tx.send(error).is_err() { break Ok(()); }
+                        continue;
+                    }
+                };
+                // Validate it's player's turn
+                let acting_seat = hand.betting.acting_seat(hand.button_position);
+                if acting_seat != Some(seat) {
+                    drop(tm);
+                    let error = Message::Error {
+                        version: "1.0".to_string(),
+                        code: "not_your_turn".to_string(),
+                        message: "it is not your turn to act".to_string(),
+                        original_type: "action".to_string(),
+                    };
+                    if tx.send(error).is_err() { break Ok(()); }
+                    continue;
+                }
+                // Create action struct
+                let action = Action {
+                    seat,
+                    kind,
+                    amount,
+                    timestamp: Utc::now(),
+                };
+                // Apply action
+                if let Err(e) = hand.apply_action(action.clone()) {
+                    drop(tm);
+                    let error = Message::Error {
+                        version: "1.0".to_string(),
+                        code: "illegal_action".to_string(),
+                        message: e,
+                        original_type: "action".to_string(),
+                    };
+                    if tx.send(error).is_err() { break Ok(()); }
+                    continue;
+                }
+                // Success: broadcast updated hand state
+                let config = table.config.clone();
+                let hand_clone = hand.clone();
+                drop(tm); // release lock before broadcasting
+
+                // Determine acting seat for next player (or None if round complete)
+                let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
+                let time_remaining_ms = config.action_timeout_secs * 1000;
+                server.connection_manager.broadcast_to_table(&table_id, |player_seat| {
+                    create_hand_state_message(
+                        &hand_clone,
+                        table_id.clone(),
+                        player_seat,
+                        next_acting_seat,
+                        time_remaining_ms,
+                    )
+                }).await;
+
+                // Handle fold immediately (hand ends)
+                if action.kind == ActionKind::Fold {
+                    // Evaluate winner (should be the other player)
+                    let winners = hand_clone.evaluate_winner();
+                    if winners.is_empty() {
+                        // Should not happen, but if no winners, just reset hand
+                        let mut tm = server.table_manager.lock().await;
+                        let table = tm.get_table_mut(&table_id).expect("table must exist");
+                        table.current_hand = None;
+                        // Broadcast updated TableState (no stack changes)
+                        let table_clone = table.clone();
+                        drop(tm);
+                        let table_state = Message::TableState {
+                            version: "1.0".to_string(),
+                            table_id: table_id.clone(),
+                            seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                                seat: i as u8,
+                                player: maybe_player.clone(),
+                            }).collect(),
+                            config: table_clone.config.clone(),
+                            current_hand_id: None,
+                        };
+                        server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                    } else {
+                        // Award pot(s) to winners (same logic as showdown but no side pots expected)
+                        let button = hand_clone.button_position;
+                        let mut pots = vec![(hand_clone.pot.main, vec![0, 1])]; // main pot eligible for both seats
+                        for side_pot in &hand_clone.pot.side_pots {
+                            pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
+                        }
+                        let mut awards = [0u64, 0u64];
+                        for (amount, eligible_seats) in pots {
+                            let eligible_winners: Vec<_> = winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
+                            if eligible_winners.is_empty() {
+                                continue;
+                            }
+                            let share = amount / eligible_winners.len() as u64;
+                            let remainder = amount % eligible_winners.len() as u64;
+                            for (idx, &seat) in eligible_winners.iter().enumerate() {
+                                let mut award = share;
+                                if idx == 0 && remainder > 0 {
+                                    let mut sorted = eligible_winners.clone();
+                                    sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
+                                    if seat == sorted[0] {
+                                        award += remainder;
+                                    }
+                                }
+                                awards[seat as usize] += award;
+                            }
+                        }
+                        // Update player stacks in table seats
+                        let mut tm = server.table_manager.lock().await;
+                        let table = tm.get_table_mut(&table_id).expect("table must exist");
+                        for (seat, award) in awards.iter().enumerate() {
+                            if let Some(player) = table.seats[seat].as_mut() {
+                                player.stack += award;
+                            }
+                        }
+                        // Reset current hand
+                        table.current_hand = None;
+                        // Broadcast updated TableState
+                        let table_clone = table.clone();
+                        drop(tm);
+                        let table_state = Message::TableState {
+                            version: "1.0".to_string(),
+                            table_id: table_id.clone(),
+                            seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                                seat: i as u8,
+                                player: maybe_player.clone(),
+                            }).collect(),
+                            config: table_clone.config.clone(),
+                            current_hand_id: None,
+                        };
+                        server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                    }
+                } else if hand_clone.betting.is_round_complete() {
+                    // Re-lock table manager to advance street
+                    let mut tm = server.table_manager.lock().await;
+                    let table = match tm.get_table_mut(&table_id) {
+                        Some(table) => table,
+                        None => continue, // table disappeared
+                    };
+                    let hand = match table.current_hand.as_mut() {
+                        Some(hand) if hand.id == hand_id => hand,
+                        _ => continue,
+                    };
+                    // Advance street
+                    if let Err(e) = hand.advance_street() {
+                        error!("failed to advance street: {}", e);
+                        // If street advance fails, maybe hand is finished? We'll ignore for now.
+                    } else {
+                        // Street advanced; broadcast new hand state
+                        let hand_clone = hand.clone();
+                        let config = table.config.clone();
+                        drop(tm);
+                        let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
+                        let time_remaining_ms = config.action_timeout_secs * 1000;
+                        server.connection_manager.broadcast_to_table(&table_id, |player_seat| {
+                            create_hand_state_message(
+                                &hand_clone,
+                                table_id.clone(),
+                                player_seat,
+                                next_acting_seat,
+                                time_remaining_ms,
+                            )
+                        }).await;
+                        // If street is Showdown, evaluate winner and award pot
+                        if hand_clone.current_street == Street::Showdown {
+                            // Evaluate winners
+                            let winners = hand_clone.evaluate_winner();
+                            if winners.is_empty() {
+                                // Should not happen, but if no winners, just reset hand
+                                let mut tm = server.table_manager.lock().await;
+                                let table = tm.get_table_mut(&table_id).expect("table must exist");
+                                table.current_hand = None;
+                                // Broadcast updated TableState (no stack changes)
+                                let table_clone = table.clone();
+                                drop(tm);
+                                let table_state = Message::TableState {
+                                    version: "1.0".to_string(),
+                                    table_id: table_id.clone(),
+                                    seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                                        seat: i as u8,
+                                        player: maybe_player.clone(),
+                                    }).collect(),
+                                    config: table_clone.config.clone(),
+                                    current_hand_id: None,
+                                };
+                                server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                            } else {
+                                // Award pot(s) to winners
+                                let button = hand_clone.button_position;
+                                // Collect pots: main pot first, then side pots
+                                let mut pots = vec![(hand_clone.pot.main, vec![0, 1])]; // main pot eligible for both seats
+                                for side_pot in &hand_clone.pot.side_pots {
+                                    pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
+                                }
+                                // Compute total award per seat
+                                let mut awards = [0u64, 0u64];
+                                for (amount, eligible_seats) in pots {
+                                    // Determine which winners are eligible for this pot
+                                    let eligible_winners: Vec<_> = winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
+                                    if eligible_winners.is_empty() {
+                                        continue; // no eligible winner (should not happen)
+                                    }
+                                    // Split amount equally among eligible winners
+                                    let share = amount / eligible_winners.len() as u64;
+                                    let remainder = amount % eligible_winners.len() as u64;
+                                    for (idx, &seat) in eligible_winners.iter().enumerate() {
+                                        let mut award = share;
+                                        // Distribute remainder to winner closest to button
+                                        if idx == 0 && remainder > 0 {
+                                            // Determine which winner gets remainder: winner closest to button (heads‑up: button first)
+                                            // Sort eligible winners by distance to button (clockwise)
+                                            let mut sorted = eligible_winners.clone();
+                                            sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
+                                            if seat == sorted[0] {
+                                                award += remainder;
+                                            }
+                                        }
+                                        awards[seat as usize] += award;
+                                    }
+                                }
+                                // Update player stacks in table seats
+                                let mut tm = server.table_manager.lock().await;
+                                let table = tm.get_table_mut(&table_id).expect("table must exist");
+                                for (seat, award) in awards.iter().enumerate() {
+                                    if let Some(player) = table.seats[seat].as_mut() {
+                                        player.stack += award;
+                                    }
+                                }
+                                // Reset current hand
+                                table.current_hand = None;
+                                // Broadcast updated TableState
+                                let table_clone = table.clone();
+                                drop(tm);
+                                let table_state = Message::TableState {
+                                    version: "1.0".to_string(),
+                                    table_id: table_id.clone(),
+                                    seats: table_clone.seats.iter().enumerate().map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                                        seat: i as u8,
+                                        player: maybe_player.clone(),
+                                    }).collect(),
+                                    config: table_clone.config.clone(),
+                                    current_hand_id: None,
+                                };
+                                server.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
+                            }
+                        }
+                    }
                 }
             }
             _ => {
@@ -308,7 +595,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     original_type: "unknown".to_string(),
                 };
                 if tx.send(error).is_err() {
-                    break;
+                    break Ok(());
                 }
             }
         }
