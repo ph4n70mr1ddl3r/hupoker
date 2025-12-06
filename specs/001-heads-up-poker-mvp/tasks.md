@@ -9,7 +9,7 @@
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
-## Format: `[ID] [P?] [Story] Description`
+## Format: `[ID] [P?] [Story?] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
@@ -58,7 +58,7 @@
 
 **Independent Test**: Launch server with config, start client, connect and join table; verify server sends `TableState` with correct seat occupation.
 
-### Tests for User Story 1 (Mandatory per FR‑012)
+### Tests for User Story 1 (Mandatory per FR‑005, FR‑012)
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
@@ -124,7 +124,7 @@
 - [ ] T042 [US3] Server: on TCP disconnect, mark player as disconnected, start reconnection timer
 - [ ] T043 [US3] Server: allow `JoinTable` for same seat within `reconnection_timeout_secs` if `disconnected_at` is set
 - [ ] T044 [US3] Server: on re‑join, send current `TableState` and `HandState` (with player’s hole cards)
-- [ ] T045 [US3] Client: handle network errors gracefully, show “Reconnecting…” UI, attempt automatic reconnection
+- [ ] T045 [US3] Client: handle network errors gracefully, show "Reconnecting…" UI, attempt automatic reconnection
 - [ ] T046 [US3] Client: restore UI state after reconnection (same seat, same hand)
 
 **Checkpoint**: User Story 3 complete. Player can survive brief network interruption without losing seat or chips.
@@ -148,7 +148,7 @@
 - [ ] T050 [US4] If timeout exceeded, apply auto‑fold action (call `hand.apply_action` with `ActionKind::Fold`)
 - [ ] T051 [US4] Broadcast `HandState` update reflecting auto‑fold
 - [ ] T052 [US4] Client: display visual countdown timer for acting player
-- [ ] T053 [US4] Client: handle server‑initiated auto‑fold (show “folded by timeout” message)
+- [ ] T053 [US4] Client: handle server‑initiated auto‑fold (show "folded by timeout" message)
 
 **Checkpoint**: User Story 4 complete. Game flow continues even if a player stalls.
 
