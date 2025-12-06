@@ -4,6 +4,7 @@ use server::{audit_log::AuditLog, server::Server};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
+use tokio::time::sleep;
 
 #[tokio::test]
 async fn client_hello_server_hello() -> Result<()> {
@@ -144,9 +145,132 @@ async fn join_table_success() -> Result<()> {
     server_handle.abort();
     Ok(())
 }
-
+ 
 #[tokio::test]
 async fn reconnection_flow() -> Result<()> {
-    // TODO: implement reconnection test
+    // Create a temporary listener to get a free port
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    drop(listener);
+
+    // Build config with short reconnection timeout for test
+    let config = ServerConfig {
+        bind_address: addr.to_string(),
+        tables: vec![TableConfig {
+            small_blind: 10,
+            big_blind: 20,
+            starting_stack: 1500,
+            action_timeout_secs: 30,
+            reconnection_timeout_secs: 2, // 2 seconds for test
+        }],
+        audit_log_path: PathBuf::from("test-audit-reconn.log"),
+        encryption_key_env_var: "HUPOKER_ENCRYPTION_KEY".to_string(),
+    };
+    let audit_log = AuditLog::new(&config.audit_log_path, None)?;
+    let server = Server::new(config, audit_log);
+    let server_listener = server.bind().await?;
+    let server_handle = tokio::spawn(async move {
+        let _ = server.run(server_listener).await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Helper to connect and join a seat, returns reader, writer, and table_state JSON
+    async fn connect_and_join(
+        addr: std::net::SocketAddr,
+        seat: u8,
+    ) -> Result<(
+        BufReader<tokio::net::tcp::OwnedReadHalf>,
+        BufWriter<tokio::net::tcp::OwnedWriteHalf>,
+        serde_json::Value,
+    )> {
+        let stream = TcpStream::connect(addr).await?;
+        let (read_half, write_half) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
+        let mut writer = BufWriter::new(write_half);
+
+        // Send ClientHello
+        let client_hello = serde_json::json!({
+            "type": "client_hello",
+            "version": "1.0",
+            "client_name": "test",
+            "client_version": "0.1.0"
+        });
+        let line = serde_json::to_string(&client_hello)? + "\n";
+        writer.write_all(line.as_bytes()).await?;
+        writer.flush().await?;
+
+        // Read ServerHello response
+        let mut response = String::new();
+        reader.read_line(&mut response).await?;
+        let server_hello: serde_json::Value = serde_json::from_str(&response)?;
+        assert_eq!(server_hello["type"], "server_hello");
+        assert_eq!(server_hello["status"], "accepted");
+
+        // Send JoinTable
+        let join_table = serde_json::json!({
+            "type": "join_table",
+            "version": "1.0",
+            "table_id": "table-0",
+            "seat": seat
+        });
+        let line = serde_json::to_string(&join_table)? + "\n";
+        writer.write_all(line.as_bytes()).await?;
+        writer.flush().await?;
+
+        // Read TableState response
+        let mut response = String::new();
+        reader.read_line(&mut response).await?;
+        eprintln!("DEBUG seat {}: received line: {}", seat, response.trim());
+        let table_state: serde_json::Value = serde_json::from_str(&response)?;
+        eprintln!("DEBUG seat {}: parsed type: {}", seat, table_state["type"]);
+        assert_eq!(table_state["type"], "table_state");
+        assert_eq!(table_state["table_id"], "table-0");
+
+        Ok((reader, writer, table_state))
+    }
+
+    // Connect player 0
+    let (mut reader0, mut writer0, _table_state0) = connect_and_join(addr, 0).await?;
+    // Connect player 1
+    let (mut reader1, mut writer1, _table_state1) = connect_and_join(addr, 1).await?;
+
+    // Wait for hand start (server automatically starts hand after both seats join)
+    // Read HandState for player 0 (should receive)
+    let mut response = String::new();
+    reader0.read_line(&mut response).await?;
+    let hand_state0: serde_json::Value = serde_json::from_str(&response)?;
+    assert_eq!(hand_state0["type"], "hand_state");
+    // Read HandState for player 1 (should receive)
+    let mut response = String::new();
+    reader1.read_line(&mut response).await?;
+    let hand_state1: serde_json::Value = serde_json::from_str(&response)?;
+    assert_eq!(hand_state1["type"], "hand_state");
+
+    // Player 1 disconnects (drop reader and writer)
+    drop(reader1);
+    drop(writer1);
+
+    // Wait a bit but within reconnection timeout
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Player 1 reconnects (new TCP connection) and joins same seat
+    let (mut reader1_new, mut writer1_new, table_state_reconn) = connect_and_join(addr, 1).await?;
+    // Seat 1 should have a player
+    let seats = table_state_reconn["seats"].as_array().unwrap();
+    assert!(seats[1]["player"].is_object());
+
+    // Should also receive HandState (with hole cards) if hand still active
+    let mut response = String::new();
+    reader1_new.read_line(&mut response).await?;
+    let hand_state_reconn: serde_json::Value = serde_json::from_str(&response)?;
+    assert_eq!(hand_state_reconn["type"], "hand_state");
+    // Verify hole cards are present (should be array of 2 cards)
+    let hole_cards = &hand_state_reconn["hole_cards"];
+    assert!(hole_cards.is_array());
+    assert_eq!(hole_cards.as_array().unwrap().len(), 2);
+
+    // Clean up: kill server task
+    server_handle.abort();
     Ok(())
 }
