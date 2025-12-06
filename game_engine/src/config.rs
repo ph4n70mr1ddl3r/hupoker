@@ -28,8 +28,7 @@ impl ServerConfig {
             return Err("encryption_key_env_var must not be empty".to_string());
         }
         for (i, table) in self.tables.iter().enumerate() {
-            table.validate()
-                .map_err(|e| format!("table config {} invalid: {}", i, e))?;
+            table.validate().map_err(|e| format!("table config {} invalid: {}", i, e))?;
         }
         Ok(())
     }

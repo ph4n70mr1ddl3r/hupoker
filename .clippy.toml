@@ -1,4 +1,4 @@
 # Clippy configuration
-doc-valid-idents = "warn"
-pub-use = "warn"
-wildcard-imports = "warn"
+doc-valid-idents = ["warn"]
+pub-underscore-fields-behavior = "PubliclyExported"
+allowed-wildcard-imports = []

@@ -19,12 +19,12 @@
 
 **Purpose**: Project initialization and basic workspace structure as defined in plan.md.
 
-- [ ] T001 Create workspace root Cargo.toml with three members: `game_engine`, `server`, `client_desktop`
-- [ ] T002 [P] Initialize `game_engine` crate with dependencies from plan.md (`rand_core`, `getrandom`, `rand_chacha`, `serde`)
-- [ ] T003 [P] Initialize `server` crate with dependencies (`tokio`, `serde_json`, `tracing`, `thiserror`, `toml`, `chacha20poly1305`)
-- [ ] T004 [P] Initialize `client_desktop` crate with dependencies (`egui`, `eframe`, `serde_json`, `tracing`)
-- [ ] T005 [P] Configure workspace‑level linting (`rustfmt.toml`, `.clippy.toml`) and ensure `cargo fmt` / `cargo clippy` pass
-- [ ] T006 Create `tests/` directory at workspace root with subdirectories `contract/`, `integration/`, `unit/`
+- [X] T001 Create workspace root Cargo.toml with three members: `game_engine`, `server`, `client_desktop`
+- [X] T002 [P] Initialize `game_engine` crate with dependencies from plan.md (`rand_core`, `getrandom`, `rand_chacha`, `serde`)
+- [X] T003 [P] Initialize `server` crate with dependencies (`tokio`, `serde_json`, `tracing`, `thiserror`, `toml`, `chacha20poly1305`)
+- [X] T004 [P] Initialize `client_desktop` crate with dependencies (`egui`, `eframe`, `serde_json`, `tracing`)
+- [X] T005 [P] Configure workspace‑level linting (`rustfmt.toml`, `.clippy.toml`) and ensure `cargo fmt` / `cargo clippy` pass
+- [X] T006 Create `tests/` directory at workspace root with subdirectories `contract/`, `integration/`, `unit/`
 
 **Checkpoint**: Workspace ready, crates exist, dependencies declared, formatting/linting configured.
 
@@ -36,17 +36,17 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T007 Implement data‑model types (Card, Rank, Suit, Deck, Hand, Pot, Action, Player, Table, ServerConfig) in `game_engine/src/lib.rs` and corresponding modules (see `data‑model.md` for exact definitions)
-- [ ] T008 [P] Add validation methods for each type (e.g., `Seat` must be 0/1, `small_blind < big_blind`, etc.)
-- [ ] T009 Implement `Deck` shuffling using `rand_chacha` with deterministic seed (secret from OS entropy)
+- [X] T007 Implement data‑model types (Card, Rank, Suit, Deck, Hand, Pot, Action, Player, Table, ServerConfig) in `game_engine/src/lib.rs` and corresponding modules (see `data‑model.md` for exact definitions)
+- [X] T008 [P] Add validation methods for each type (e.g., `Seat` must be 0/1, `small_blind < big_blind`, etc.)
+- [X] T009 Implement `Deck` shuffling using `rand_chacha` with deterministic seed (secret from OS entropy)
 - [ ] T010 Implement `Hand` state transitions (`deal`, `advance_street`, `apply_action`, `evaluate_winner`) – pure logic, no networking
 - [ ] T011 Implement betting logic (minimum raise, all‑in, side pots) in `game_engine/src/betting.rs`
-- [ ] T012 Implement hand evaluation (standard NLHE ranking) in `game_engine/src/hand_evaluation.rs`
-- [ ] T013 Create `server::config` module to parse TOML config (`ServerConfig`) and validate
-- [ ] T014 Create `server::audit_log` module with encrypted log writer (ChaCha20‑Poly1305) for RNG seeds and game events
-- [ ] T015 Create `server::protocol` module with message definitions from `contracts/protocol.md` (JSON serialization with `serde`)
-- [ ] T016 Create `server::table_manager` module that holds `Table` instances and manages seat assignment
-- [ ] T017 Create `client_desktop::connection` module with TCP client and message framing (newline‑delimited JSON)
+- [X] T012 Implement hand evaluation (standard NLHE ranking) in `game_engine/src/hand_evaluation.rs`
+- [X] T013 Create `server::config` module to parse TOML config (`ServerConfig`) and validate
+- [X] T014 Create `server::audit_log` module with encrypted log writer (ChaCha20‑Poly1305) for RNG seeds and game events
+- [X] T015 Create `server::protocol` module with message definitions from `contracts/protocol.md` (JSON serialization with `serde`)
+- [X] T016 Create `server::table_manager` module that holds `Table` instances and manages seat assignment
+- [X] T017 Create `client_desktop::connection` module with TCP client and message framing (newline‑delimited JSON)
 
 **Checkpoint**: Game engine can simulate a full hand locally; server can parse config and manage tables; client can connect and send/receive messages; audit logging ready. User stories can now start in parallel.
 

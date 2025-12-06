@@ -1,0 +1,10 @@
+bind_address = "127.0.0.1:8080"
+audit_log_path = "audit.log"
+encryption_key_env_var = "HUPOKER_ENCRYPTION_KEY"
+
+[[tables]]
+small_blind = 10
+big_blind = 20
+starting_stack = 1500
+action_timeout_secs = 30
+reconnection_timeout_secs = 60

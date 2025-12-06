@@ -12,7 +12,7 @@ pub struct Action {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionKind {
     Fold,
     Check,
@@ -29,16 +29,16 @@ impl Action {
         match self.kind {
             ActionKind::Fold | ActionKind::Check => {
                 if self.amount.is_some() {
-                    return Err(format!("{} must not have amount", self.kind));
+                    return Err(format!("{:?} must not have amount", self.kind));
                 }
             }
             ActionKind::Call | ActionKind::Bet | ActionKind::Raise => {
                 if self.amount.is_none() {
-                    return Err(format!("{} must have amount", self.kind));
+                    return Err(format!("{:?} must have amount", self.kind));
                 }
                 let amount = self.amount.unwrap();
                 if amount == 0 {
-                    return Err(format!("{} amount must be positive", self.kind));
+                    return Err(format!("{:?} amount must be positive", self.kind));
                 }
                 // TODO: validate amount against minimum raise, stack etc.
             }

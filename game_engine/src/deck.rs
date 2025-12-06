@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Deck {
     cards: Vec<super::Card>,
     #[serde(skip, default = "default_rng")]
+    #[allow(dead_code)]
     rng: ChaCha12Rng, // seeded with secret from OS entropy
 }
 
@@ -52,5 +53,12 @@ impl Deck {
 
     pub fn remaining(&self) -> usize {
         self.cards.len()
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.cards.len() > 52 {
+            return Err(format!("deck has too many cards: {}", self.cards.len()));
+        }
+        Ok(())
     }
 }

@@ -1,12 +1,23 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+#[allow(unused_imports)]
 use super::{Hand, Player, Seat};
 
 pub type ChipCount = u64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableId(String); // e.g., "table-1"
+
+impl TableId {
+    pub fn new(s: String) -> Self {
+        Self(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableConfig {
@@ -20,16 +31,26 @@ pub struct TableConfig {
 impl TableConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.small_blind >= self.big_blind {
-            return Err(format!("small_blind ({}) must be less than big_blind ({})", self.small_blind, self.big_blind));
+            return Err(format!(
+                "small_blind ({}) must be less than big_blind ({})",
+                self.small_blind, self.big_blind
+            ));
         }
         if self.starting_stack < self.big_blind * 20 {
-            return Err(format!("starting_stack ({}) must be at least big_blind * 20 ({})", self.starting_stack, self.big_blind * 20));
+            return Err(format!(
+                "starting_stack ({}) must be at least big_blind * 20 ({})",
+                self.starting_stack,
+                self.big_blind * 20
+            ));
         }
         if self.action_timeout_secs == 0 {
             return Err("action_timeout_secs must be at least 1".to_string());
         }
         if self.reconnection_timeout_secs < self.action_timeout_secs {
-            return Err(format!("reconnection_timeout_secs ({}) must be >= action_timeout_secs ({})", self.reconnection_timeout_secs, self.action_timeout_secs));
+            return Err(format!(
+                "reconnection_timeout_secs ({}) must be >= action_timeout_secs ({})",
+                self.reconnection_timeout_secs, self.action_timeout_secs
+            ));
         }
         Ok(())
     }
@@ -58,7 +79,7 @@ impl Table {
             }
         }
         // If current_hand is Some, both seats must be occupied and not sitting out
-        if let Some(hand) = &self.current_hand {
+        if let Some(_hand) = &self.current_hand {
             let occupied_seats: Vec<_> = self.seats.iter().filter_map(|s| s.as_ref()).collect();
             if occupied_seats.len() != 2 {
                 return Err("current_hand exists but not both seats occupied".to_string());

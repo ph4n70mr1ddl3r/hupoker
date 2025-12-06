@@ -9,6 +9,12 @@ pub type ChipCount = u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ConnectionId(Uuid);
 
+impl ConnectionId {
+    pub fn new(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
 /// A connected player at a table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {

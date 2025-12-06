@@ -35,10 +35,7 @@ pub enum AuditEvent {
 }
 
 impl AuditLog {
-    pub fn new(
-        path: impl AsRef<Path>,
-        encryption_key: Option<[u8; 32]>,
-    ) -> Result<Self> {
+    pub fn new(path: impl AsRef<Path>, encryption_key: Option<[u8; 32]>) -> Result<Self> {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -53,12 +50,10 @@ impl AuditLog {
     }
 
     pub fn log_event(&mut self, event: AuditEvent) -> Result<()> {
-        let json = serde_json::to_string(&event)
-            .context("failed to serialize audit event")?;
+        let json = serde_json::to_string(&event).context("failed to serialize audit event")?;
         // Encrypt if cipher exists (for RNG seeds)
         // For now, just write JSON line
-        writeln!(self.writer, "{}", json)
-            .context("failed to write audit log")?;
+        writeln!(self.writer, "{}", json).context("failed to write audit log")?;
         self.writer.flush()?;
         Ok(())
     }
@@ -67,8 +62,9 @@ impl AuditLog {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
         // Use a zero nonce for simplicity (should be unique per encryption)
         let nonce = Nonce::from_slice(&[0u8; 12]);
-        let encrypted = cipher.encrypt(nonce, seed.as_ref())
-            .context("seed encryption failed")?;
+        let encrypted = cipher
+            .encrypt(nonce, seed.as_ref())
+            .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
         Ok(base64::encode(encrypted))
     }
 }
