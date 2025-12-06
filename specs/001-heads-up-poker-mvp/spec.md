@@ -5,6 +5,16 @@
 **Status**: Draft  
 **Input**: User description: "Build a minimal but robust heads-up No-Limit Texas Hold'em poker system with authoritative Rust backend server and Windows desktop client, handling disconnections, timeouts, and table configuration."
 
+## Clarifications
+
+### Session 2025-12-06
+
+- Q: How are players identified for reconnection? → A: Seat‑based identification – player is identified by the seat position they occupy; the seat is reserved during the timeout window.
+- Q: What are reasonable default timeout values? → A: Action timeout 30 seconds, reconnection timeout 60 seconds.
+- Q: How are RNG seeds stored for auditability? → A: Store seed in separate secured audit log, encrypted.
+- Q: What specific NLHE betting rules apply? → A: Follow standard NLHE rules with typical defaults (minimum raise = big blind, unlimited raises heads‑up, all‑in allowed).
+- Q: What protocol versioning scheme is used? → A: Major.minor semantic versioning (breaking changes increment major, compatible extensions increment minor).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Connect and Join Table (Priority: P1)
@@ -106,7 +116,7 @@ As a developer, I can read the server logs to understand how a particular hand p
 - What occurs when network latency causes delayed actions? (Server enforces turn order, rejects late actions)
 - How does the system handle a player attempting to act out of turn? (Reject action)
 - What happens when a player's bet size is not a legal increment? (Reject, specify valid amounts)
-- How does the system handle a player reconnecting with a different client instance? (Identify by session, allow reconnection)
+- How does the system handle a player reconnecting with a different client instance? (Reconnect to reserved seat if within timeout)
 
 ## Requirements *(mandatory)*
 
@@ -148,6 +158,10 @@ As a developer, I can read the server logs to understand how a particular hand p
 - No authentication or user accounts are required for MVP (anonymous play).
 - The configuration file format will be TOML for ease of editing.
 - The cryptographically secure RNG will be provided by the OS or a well-audited Rust crate.
+- Default timeouts: action timeout 30 seconds, reconnection timeout 60 seconds (configurable).
+- RNG seeds are stored encrypted in a separate secured audit log for post‑hand fairness verification.
+- Betting follows standard NLHE rules: minimum raise = big blind, unlimited raises heads‑up, all‑in allowed, no bet‑size cap beyond stack size.
+- Network protocol uses major.minor semantic versioning for messages.
 
 ## Success Criteria *(mandatory)*
 
@@ -155,6 +169,6 @@ As a developer, I can read the server logs to understand how a particular hand p
 
 - **SC-001**: Two players can connect from separate clients and complete a full heads-up NLHE hand (blinds to showdown/fold) without manual intervention beyond legal actions.
 - **SC-002**: The server correctly enforces game rules and prevents client-side cheating via message tampering (e.g., invalid bets, acting out of turn).
-- **SC-003**: A player who disconnects and reconnects within the configured timeout (e.g., 30 seconds) resumes their seat without losing chips or hand state.
+- **SC-003**: A player who disconnects and reconnects within the configured timeout (e.g., 60 seconds) resumes their seat without losing chips or hand state.
 - **SC-004**: The game logic test suite passes all unit and integration tests, providing confidence in hand evaluation and state transition correctness.
 - **SC-005**: Server logs contain a complete audit trail of a hand (shuffles, deals, actions, outcomes) without exposing hole cards of active players until hand completion.
