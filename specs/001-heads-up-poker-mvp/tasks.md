@@ -39,8 +39,8 @@
 - [X] T007 Implement data‑model types (Card, Rank, Suit, Deck, Hand, Pot, Action, Player, Table, ServerConfig) in `game_engine/src/lib.rs` and corresponding modules (see `data‑model.md` for exact definitions)
 - [X] T008 [P] Add validation methods for each type (e.g., `Seat` must be 0/1, `small_blind < big_blind`, etc.)
 - [X] T009 Implement `Deck` shuffling using `rand_chacha` with deterministic seed (secret from OS entropy)
-- [ ] T010 Implement `Hand` state transitions (`deal`, `advance_street`, `apply_action`, `evaluate_winner`) – pure logic, no networking
-- [ ] T011 Implement betting logic (minimum raise, all‑in, side pots) in `game_engine/src/betting.rs`
+- [X] T010 Implement `Hand` state transitions (`deal`, `advance_street`, `apply_action`, `evaluate_winner`) – pure logic, no networking
+- [X] T011 Implement betting logic (minimum raise, all‑in, side pots) in `game_engine/src/betting.rs`
 - [X] T012 Implement hand evaluation (standard NLHE ranking) in `game_engine/src/hand_evaluation.rs`
 - [X] T013 Create `server::config` module to parse TOML config (`ServerConfig`) and validate
 - [X] T014 Create `server::audit_log` module with encrypted log writer (ChaCha20‑Poly1305) for RNG seeds and game events
@@ -62,18 +62,18 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T018 [P] [US1] Contract test for `ClientHello`/`ServerHello` handshake in `tests/contract/protocol_tests.rs`
-- [ ] T019 [P] [US1] Integration test for connection and table join in `tests/integration/connect_join.rs`
+- [X] T018 [P] [US1] Contract test for `ClientHello`/`ServerHello` handshake in `tests/contract/protocol_tests.rs`
+- [X] T019 [P] [US1] Integration test for connection and table join in `tests/integration/connect_join.rs`
 
 ### Implementation for User Story 1
 
-- [ ] T020 [P] [US1] Implement server TCP listener and connection acceptance in `server/src/main.rs`
-- [ ] T021 [P] [US1] Implement message framing (newline‑delimited JSON) and version negotiation in `server/src/protocol/codec.rs`
-- [ ] T022 [US1] Handle `ClientHello` → `ServerHello` flow in `server/src/session.rs`
-- [ ] T023 [US1] Handle `JoinTable` request, validate seat availability, send `TableState` response
-- [ ] T024 [P] [US1] Create client desktop UI skeleton with connection dialog (server address input) in `client_desktop/src/ui/mod.rs`
-- [ ] T025 [US1] Implement client network connection and message sending/receiving in `client_desktop/src/connection.rs`
-- [ ] T026 [US1] Wire UI connection dialog to network layer; on successful join, display table view with seat occupation
+- [X] T020 [P] [US1] Implement server TCP listener and connection acceptance in `server/src/main.rs`
+- [X] T021 [P] [US1] Implement message framing (newline‑delimited JSON) and version negotiation in `server/src/protocol/codec.rs`
+- [X] T022 [US1] Handle `ClientHello` → `ServerHello` flow in `server/src/server.rs`
+- [X] T023 [US1] Handle `JoinTable` request, validate seat availability, send `TableState` response
+- [X] T024 [P] [US1] Create client desktop UI skeleton with connection dialog (server address input) in `client_desktop/src/ui/mod.rs`
+- [X] T025 [US1] Implement client network connection and message sending/receiving in `client_desktop/src/connection.rs`
+- [X] T026 [US1] Wire UI connection dialog to network layer; on successful join, display table view with seat occupation
 
 **Checkpoint**: User Story 1 complete. Two clients can connect to server, join a table (different seats), see table state. No gameplay yet.
 
@@ -87,13 +87,13 @@
 
 ### Tests for User Story 2 (Mandatory per FR‑012)
 
-- [ ] T027 [P] [US2] Unit test for `Hand` state transitions (deal, betting, street advance, showdown) in `tests/unit/game_engine_tests.rs`
-- [ ] T028 [P] [US2] Integration test simulating a full hand with two automated players in `tests/integration/full_hand_simulation.rs`
+- [X] T027 [P] [US2] Unit test for `Hand` state transitions (deal, betting, street advance, showdown) in `tests/unit/game_engine_tests.rs`
+- [X] T028 [P] [US2] Integration test simulating a full hand with two automated players in `tests/integration/full_hand_simulation.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Extend `table_manager` to start a hand when both seats are occupied (create `Hand` via game engine)
-- [ ] T030 [US2] Implement `HandState` message generation (include hole cards only for respective player)
+- [X] T029 [US2] Extend `table_manager` to start a hand when both seats are occupied (create `Hand` via game engine)
+- [X] T030 [US2] Implement `HandState` message generation (include hole cards only for respective player)
 - [ ] T031 [US2] Broadcast `HandState` to both clients on hand start, each action, street advance, hand end
 - [ ] T032 [P] [US2] Add UI table view showing community cards, pot, player stacks, and action buttons in `client_desktop/src/ui/table_view.rs`
 - [ ] T033 [P] [US2] Render card graphics (simple rectangles with rank/suit) in `client_desktop/src/ui/cards.rs`

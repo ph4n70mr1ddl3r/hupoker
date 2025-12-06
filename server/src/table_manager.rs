@@ -1,4 +1,4 @@
-use game_engine::{Player, Table, TableId};
+use game_engine::{HandId, Player, Table, TableId};
 
 pub struct TableManager {
     tables: Vec<Table>,
@@ -42,5 +42,14 @@ impl TableManager {
         }
         table.seats[seat as usize] = Some(player);
         Ok(())
+    }
+
+    /// Start a new hand at the specified table.
+    /// Requires both seats occupied and no current hand.
+    /// `seed` is a 32-byte random seed for the deck.
+    /// Returns the new HandId on success.
+    pub fn start_hand(&mut self, table_id: &TableId, seed: [u8; 32]) -> Result<HandId, String> {
+        let table = self.get_table_mut(table_id).ok_or_else(|| "table not found".to_string())?;
+        table.start_hand(seed)
     }
 }

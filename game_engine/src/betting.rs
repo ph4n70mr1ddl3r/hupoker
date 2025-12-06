@@ -69,6 +69,21 @@ impl Betting {
         }
     }
 
+    /// Starts a new betting round for post‑flop streets (no blinds posted).
+    /// `big_blind` is used for minimum bet size.
+    /// `stacks` are current player stacks.
+    pub fn new_street(big_blind: ChipCount, stacks: [ChipCount; 2]) -> Self {
+        Self {
+            bets: [0, 0],
+            current_high: 0,
+            min_raise: big_blind,
+            total_pot: 0,
+            round_complete: false,
+            stacks,
+            acted_this_round: [false, false],
+        }
+    }
+
     /// Returns the amount a player must call to stay in the hand.
     pub fn amount_to_call(&self, seat: Seat) -> ChipCount {
         self.current_high - self.bets[seat as usize]

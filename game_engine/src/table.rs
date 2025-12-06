@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[allow(unused_imports)]
-use super::{Hand, Player, Seat};
+use super::{Hand, HandId, Player, Seat};
 
 pub type ChipCount = u64;
 
@@ -62,6 +62,8 @@ pub struct Table {
     pub id: TableId,
     pub seats: [Option<Player>; 2],
     pub current_hand: Option<Hand>,
+    pub next_button_position: Seat,
+    pub hand_count: u64,
     pub config: TableConfig,
     pub created_at: DateTime<Utc>,
 }
@@ -69,6 +71,11 @@ pub struct Table {
 impl Table {
     pub fn validate(&self) -> Result<(), String> {
         self.config.validate()?;
+        // Validate next_button_position is 0 or 1
+        if self.next_button_position != 0 && self.next_button_position != 1 {
+            return Err(format!("invalid next_button_position {}", self.next_button_position));
+        }
+        // hand_count can be any non-negative integer (u64)
         // Ensure at most one player per seat
         for (i, seat) in self.seats.iter().enumerate() {
             if let Some(player) = seat {
@@ -87,5 +94,44 @@ impl Table {
             // TODO: check sitting out status
         }
         Ok(())
+    }
+
+    /// Start a new hand at this table.
+    /// Requires both seats occupied and no current hand.
+    /// `seed` is a 32-byte random seed for the deck.
+    /// Returns the new HandId on success.
+    pub fn start_hand(&mut self, seed: [u8; 32]) -> Result<HandId, String> {
+        // Validate both seats occupied
+        let occupied_seats: Vec<_> = self.seats.iter().filter_map(|s| s.as_ref()).collect();
+        if occupied_seats.len() != 2 {
+            return Err("cannot start hand: both seats must be occupied".to_string());
+        }
+        // Ensure no current hand
+        if self.current_hand.is_some() {
+            return Err("cannot start hand: a hand is already in progress".to_string());
+        }
+        // Collect player stacks
+        let player_stacks = [
+            self.seats[0].as_ref().unwrap().stack,
+            self.seats[1].as_ref().unwrap().stack,
+        ];
+        // Determine button position
+        let button_position = self.next_button_position;
+        // Create hand
+        let mut hand = Hand::deal(
+            self.config.small_blind,
+            self.config.big_blind,
+            button_position,
+            player_stacks,
+            seed,
+        );
+        // Store hand id for returning
+        let hand_id = hand.id;
+        // Update table state
+        self.current_hand = Some(hand);
+        // Advance button position for next hand (toggle 0<->1)
+        self.next_button_position = 1 - self.next_button_position;
+        self.hand_count += 1;
+        Ok(hand_id)
     }
 }

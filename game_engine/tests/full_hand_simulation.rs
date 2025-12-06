@@ -1,5 +1,5 @@
-use game_engine::{Hand, Action, ActionKind, Street};
 use chrono::Utc;
+use game_engine::{Action, ActionKind, Hand, Street};
 
 /// Simulate a simple hand where both players check down to showdown.
 #[test]
@@ -8,21 +8,31 @@ fn full_hand_simulation_checkdown() {
     let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
 
     // Preflop: small blind calls, big blind checks
-    println!("Before call: bets {:?}, round_complete {}", hand.betting.bets(), hand.betting.is_round_complete());
+    println!(
+        "Before call: bets {:?}, round_complete {}",
+        hand.betting.bets(),
+        hand.betting.is_round_complete()
+    );
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Call,
         amount: Some(10),
         timestamp: Utc::now(),
-    }).expect("call should succeed");
-    println!("After call: bets {:?}, round_complete {}", hand.betting.bets(), hand.betting.is_round_complete());
+    })
+    .expect("call should succeed");
+    println!(
+        "After call: bets {:?}, round_complete {}",
+        hand.betting.bets(),
+        hand.betting.is_round_complete()
+    );
     println!("Amount to call seat 1: {}", hand.betting.amount_to_call(1));
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     assert!(hand.betting.is_round_complete());
     hand.advance_street().expect("advance to flop should succeed");
     assert_eq!(hand.current_street, Street::Flop);
@@ -34,13 +44,15 @@ fn full_hand_simulation_checkdown() {
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     assert!(hand.betting.is_round_complete());
     hand.advance_street().expect("advance to turn should succeed");
     assert_eq!(hand.current_street, Street::Turn);
@@ -52,13 +64,15 @@ fn full_hand_simulation_checkdown() {
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     assert!(hand.betting.is_round_complete());
     hand.advance_street().expect("advance to river should succeed");
     assert_eq!(hand.current_street, Street::River);
@@ -70,13 +84,15 @@ fn full_hand_simulation_checkdown() {
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check should succeed");
+    })
+    .expect("check should succeed");
     assert!(hand.betting.is_round_complete());
     hand.advance_street().expect("advance to showdown should succeed");
     assert_eq!(hand.current_street, Street::Showdown);
@@ -100,7 +116,8 @@ fn full_hand_simulation_fold_preflop() {
         kind: ActionKind::Fold,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("fold should succeed");
+    })
+    .expect("fold should succeed");
     // Hand should be over, no further actions allowed
     assert!(hand.betting.is_round_complete());
     let winners = hand.evaluate_winner();
@@ -113,20 +130,22 @@ fn full_hand_simulation_bet_call() {
     let seed = [0u8; 32];
     let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
 
-    // Small blind raises to 100 (bet)
+    // Small blind raises to 100 (raise)
     hand.apply_action(Action {
         seat: 0,
-        kind: ActionKind::Bet,
-        amount: Some(100),
+        kind: ActionKind::Raise,
+        amount: Some(90),
         timestamp: Utc::now(),
-    }).expect("bet should succeed");
+    })
+    .expect("raise should succeed");
     // Big blind calls the raise (needs to call 80 more)
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Call,
         amount: Some(80),
         timestamp: Utc::now(),
-    }).expect("call should succeed");
+    })
+    .expect("call should succeed");
     assert!(hand.betting.is_round_complete());
     hand.advance_street().expect("advance to flop");
     assert_eq!(hand.current_street, Street::Flop);
@@ -136,13 +155,15 @@ fn full_hand_simulation_bet_call() {
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check");
+    })
+    .expect("check");
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
-    }).expect("check");
+    })
+    .expect("check");
     hand.advance_street().expect("advance to turn");
     // ... could continue but we'll stop here.
 }

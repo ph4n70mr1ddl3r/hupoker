@@ -1,5 +1,5 @@
-use game_engine::{Hand, Action, ActionKind, Card, Rank, Suit};
 use chrono::Utc;
+use game_engine::{Action, ActionKind, Card, Hand, Rank, Suit};
 use uuid::Uuid;
 
 #[test]
@@ -22,12 +22,7 @@ fn hand_deal_creates_valid_hand() {
 fn hand_apply_action_fold() {
     let seed = [0u8; 32];
     let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
-    let action = Action {
-        seat: 0,
-        kind: ActionKind::Fold,
-        amount: None,
-        timestamp: Utc::now(),
-    };
+    let action = Action { seat: 0, kind: ActionKind::Fold, amount: None, timestamp: Utc::now() };
     assert!(hand.apply_action(action).is_ok());
     assert_eq!(hand.actions.len(), 1);
     // After fold, betting round may be complete? Not necessarily.
@@ -39,12 +34,8 @@ fn hand_apply_action_bet() {
     let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
     // First, need to post blinds? The betting struct already has blinds posted.
     // Let's try a bet action (should fail if not enough chips)
-    let action = Action {
-        seat: 0,
-        kind: ActionKind::Bet,
-        amount: Some(100),
-        timestamp: Utc::now(),
-    };
+    let action =
+        Action { seat: 0, kind: ActionKind::Bet, amount: Some(100), timestamp: Utc::now() };
     // This might fail due to betting rules; we'll ignore for now.
     let result = hand.apply_action(action);
     // We'll just ensure no panic
@@ -58,20 +49,12 @@ fn hand_advance_street() {
     // Cannot advance street because betting round not complete
     assert!(hand.advance_street().is_err());
     // Simulate completing the preflop betting round: small blind calls the extra 10, big blind checks.
-    let call_action = Action {
-        seat: 0,
-        kind: ActionKind::Call,
-        amount: Some(10),
-        timestamp: Utc::now(),
-    };
+    let call_action =
+        Action { seat: 0, kind: ActionKind::Call, amount: Some(10), timestamp: Utc::now() };
     assert!(hand.apply_action(call_action).is_ok());
     // Now seat 1 (big blind) can check (amount to call is 0)
-    let check_action = Action {
-        seat: 1,
-        kind: ActionKind::Check,
-        amount: None,
-        timestamp: Utc::now(),
-    };
+    let check_action =
+        Action { seat: 1, kind: ActionKind::Check, amount: None, timestamp: Utc::now() };
     assert!(hand.apply_action(check_action).is_ok());
     // Now betting round should be complete
     assert!(hand.betting.is_round_complete());
@@ -81,18 +64,10 @@ fn hand_advance_street() {
     assert_eq!(hand.community_cards.len(), 3);
     // Can advance to Turn, but need to complete betting round first (no bets).
     // Both players check.
-    let check_action1 = Action {
-        seat: 0,
-        kind: ActionKind::Check,
-        amount: None,
-        timestamp: Utc::now(),
-    };
-    let check_action2 = Action {
-        seat: 1,
-        kind: ActionKind::Check,
-        amount: None,
-        timestamp: Utc::now(),
-    };
+    let check_action1 =
+        Action { seat: 0, kind: ActionKind::Check, amount: None, timestamp: Utc::now() };
+    let check_action2 =
+        Action { seat: 1, kind: ActionKind::Check, amount: None, timestamp: Utc::now() };
     hand.apply_action(check_action1).unwrap();
     hand.apply_action(check_action2).unwrap();
     assert!(hand.betting.is_round_complete());
@@ -105,12 +80,7 @@ fn hand_advance_street() {
 fn hand_evaluate_winner_fold() {
     let seed = [0u8; 32];
     let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
-    let action = Action {
-        seat: 0,
-        kind: ActionKind::Fold,
-        amount: None,
-        timestamp: Utc::now(),
-    };
+    let action = Action { seat: 0, kind: ActionKind::Fold, amount: None, timestamp: Utc::now() };
     hand.apply_action(action).unwrap();
     let winners = hand.evaluate_winner();
     assert_eq!(winners, vec![1]); // seat 1 wins

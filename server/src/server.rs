@@ -17,7 +17,7 @@ pub struct Server {
 
 impl Server {
     pub fn new(config: ServerConfig, audit_log: AuditLog) -> Self {
-        use chrono::Utc;
+
         use game_engine::{Table, TableId};
 
         // Create tables from config
@@ -27,6 +27,8 @@ impl Server {
                 id: TableId::new(format!("table-{}", i)),
                 seats: [None, None],
                 current_hand: None,
+                next_button_position: 0,
+                hand_count: 0,
                 config: table_config.clone(),
                 created_at: Utc::now(),
             };
@@ -38,6 +40,48 @@ impl Server {
             audit_log: Arc::new(Mutex::new(audit_log)),
             table_manager: Arc::new(Mutex::new(table_manager)),
         }
+    }
+
+    /// Attempt to start a hand at the given table if both seats are occupied and no hand is in progress.
+    /// Generates a cryptographically random seed, logs it to the audit log, and creates the hand.
+    /// Returns the HandId if a hand was started, or None otherwise.
+    pub async fn start_hand_if_possible(&self, table_id: &game_engine::TableId) -> Option<game_engine::HandId> {
+        use getrandom::getrandom;
+        // Lock table manager
+        let mut tm = self.table_manager.lock().await;
+        // Check if both seats occupied and no current hand
+        let table = match tm.get_table(table_id) {
+            Some(t) => t,
+            None => return None,
+        };
+        let occupied_seats: Vec<_> = table.seats.iter().filter_map(|s| s.as_ref()).collect();
+        if occupied_seats.len() != 2 || table.current_hand.is_some() {
+            return None;
+        }
+        // Generate random seed
+        let mut seed = [0u8; 32];
+        if let Err(e) = getrandom(&mut seed) {
+            error!("failed to generate random seed: {}", e);
+            return None;
+        }
+        // Start hand
+        let hand_id = match tm.start_hand(table_id, seed) {
+            Ok(hand_id) => hand_id,
+            Err(e) => {
+                error!("failed to start hand: {}", e);
+                return None;
+            }
+        };
+        // Log seed to audit log (encrypted)
+        {
+            let mut audit_log = self.audit_log.lock().await;
+            if let Err(e) = audit_log.log_seed(hand_id, table_id, &seed) {
+                error!("failed to log seed: {}", e);
+                // Continue anyway
+            }
+        }
+        info!("started hand {:?} at table {}", hand_id, table_id.as_str());
+        Some(hand_id)
     }
 
     pub async fn bind(&self) -> Result<TcpListener> {
@@ -77,8 +121,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     let client_hello: Message = read_message(&mut reader).await?;
     debug!("received {:?}", client_hello);
     let (version, client_name, client_version) = match client_hello {
-        Message::ClientHello { version, client_name, client_version } => {
-            (version, client_name, client_version)
+        Message::ClientHello { version, client_name: _client_name, client_version: _client_version } => {
+            (version, _client_name, _client_version)
         }
         _ => {
             warn!("first message not ClientHello");
@@ -152,12 +196,14 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 };
                 match result {
                     Ok((config, seats)) => {
+                        // Attempt to start a hand if both seats are now occupied
+                        let current_hand_id = server.start_hand_if_possible(&table_id).await;
                         let table_state = Message::TableState {
                             version: "1.0".to_string(),
                             table_id,
                             seats,
                             config,
-                            current_hand_id: None,
+                            current_hand_id,
                         };
                         write_message(&mut writer, &table_state).await?;
                     }

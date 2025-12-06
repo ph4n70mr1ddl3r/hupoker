@@ -67,9 +67,9 @@ impl Hand {
         let mut deck = deck;
         let mut hole_cards = [Vec::new(), Vec::new()];
         for _ in 0..2 {
-            for seat in 0..2 {
+            for cards in hole_cards.iter_mut() {
                 if let Some(card) = deck.draw() {
-                    hole_cards[seat].push(card);
+                    cards.push(card);
                 }
             }
         }
@@ -101,12 +101,7 @@ impl Hand {
         // Move betting pot to main pot
         self.pot.main += self.betting.total_pot();
         // Reset betting for next street with current stacks
-        self.betting = super::betting::Betting::new(
-            self.small_blind,
-            self.big_blind,
-            self.betting.stacks(),
-            self.button_position,
-        );
+        self.betting = super::betting::Betting::new_street(self.big_blind, self.betting.stacks());
         // Deal community cards based on street
         match self.current_street {
             Street::PreFlop => {

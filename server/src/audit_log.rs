@@ -5,9 +5,11 @@ use chacha20poly1305::{
 };
 use game_engine::{HandId, TableId};
 use serde::Serialize;
+use base64::{engine::general_purpose, Engine as _};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use uuid::Uuid;
 
 pub struct AuditLog {
     writer: BufWriter<File>,
@@ -58,6 +60,28 @@ impl AuditLog {
         Ok(())
     }
 
+    /// Log a hand start event with the given seed and hand ID.
+    /// If encryption is enabled, the seed is encrypted before logging.
+    pub fn log_seed(&mut self, hand_id: HandId, table_id: &TableId, seed: &[u8; 32]) -> Result<()> {
+        let rng_seed_encrypted = match &self.cipher {
+            Some(cipher) => {
+                // Use zero nonce (should be unique per encryption; for simplicity we use zero)
+                let nonce = Nonce::from_slice(&[0u8; 12]);
+                let encrypted = cipher
+                    .encrypt(nonce, seed.as_ref())
+                    .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
+                general_purpose::STANDARD.encode(encrypted)
+            }
+            None => general_purpose::STANDARD.encode(seed),
+        };
+        let event = AuditEvent::HandStart {
+            hand_id,
+            table_id: table_id.clone(),
+            rng_seed_encrypted,
+        };
+        self.log_event(event)
+    }
+
     pub fn encrypt_seed(seed: [u8; 32], key: &[u8; 32]) -> Result<String> {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
         // Use a zero nonce for simplicity (should be unique per encryption)
@@ -65,6 +89,6 @@ impl AuditLog {
         let encrypted = cipher
             .encrypt(nonce, seed.as_ref())
             .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
-        Ok(base64::encode(encrypted))
+        Ok(general_purpose::STANDARD.encode(encrypted))
     }
 }
