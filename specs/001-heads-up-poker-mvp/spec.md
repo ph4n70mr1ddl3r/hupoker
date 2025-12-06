@@ -132,9 +132,9 @@ As a developer, I can read the server logs to understand how a particular hand p
 - **FR-008**: Server MUST log all key game events (shuffles, deals, actions, outcomes) for audit without exposing hole cards of active players.
 - **FR-009**: Windows desktop client MUST connect to the server, display table state (stacks, pot, community cards, hole cards), and allow legal actions.
 - **FR-010**: Client MUST provide visual feedback for connection status, turn indication, and time remaining.
-- **FR-011**: Client MUST handle network errors gracefully with reconnection attempts and user notifications.
+- **FR-011**: Client MUST handle network errors by attempting automatic reconnection up to 3 times with exponential backoff (1s, 2s, 4s), displaying user‑friendly error messages, and showing a persistent visual reconnection indicator while disconnected.
 - **FR-012**: Game engine component MUST have unit tests for hand evaluation and state transitions, and an integration test simulating a full hand.
-- **FR-013**: Project MUST have a clear separation between game engine, server, and client desktop crates.
+- **FR-013**: Project MUST implement the three‑crate workspace structure from plan.md, with separate `Cargo.toml` files for each crate, no shared business‑logic types beyond serialization structs, and independent compilation (each crate can be built and tested separately).
 - **FR-014**: All code MUST pass formatting and linting checks.
 
 ### Key Entities *(include if feature involves data)*

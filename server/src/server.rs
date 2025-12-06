@@ -421,17 +421,22 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     }
                     continue;
                 }
-                // Create player object
-                let player = Player {
-                    seat,
-                    stack: 1500, // TODO: get from table config
-                    connection_id,
-                    disconnected_at: None,
-                    is_sitting_out: false,
-                };
                 // Attempt to occupy seat and get table state
-                let result = {
+                let result: Result<_, String> = {
                     let mut tm = server.table_manager.lock().await;
+                    // Get starting stack from table config (default to 1500 if table not found)
+                    let starting_stack = tm
+                        .get_table(&table_id)
+                        .map(|t| t.config.starting_stack)
+                        .unwrap_or(1500);
+                    // Create player object
+                    let player = Player {
+                        seat,
+                        stack: starting_stack,
+                        connection_id,
+                        disconnected_at: None,
+                        is_sitting_out: false,
+                    };
                     if let Err(e) = tm.occupy_seat(&table_id, seat, player) {
                         Err(e)
                     } else {
