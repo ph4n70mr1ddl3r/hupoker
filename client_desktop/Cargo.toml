@@ -1,0 +1,16 @@
+[package]
+name = "client_desktop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+game_engine = { path = "../game_engine" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+egui.workspace = true
+eframe.workspace = true
+uuid.workspace = true
+chrono.workspace = true

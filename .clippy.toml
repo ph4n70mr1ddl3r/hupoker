@@ -1,0 +1,4 @@
+# Clippy configuration
+doc-valid-idents = "warn"
+pub-use = "warn"
+wildcard-imports = "warn"
