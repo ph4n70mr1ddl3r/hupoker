@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{interval, Duration};
 
 use tokio::sync::Mutex;
 use tracing::{error, info};
@@ -287,6 +288,25 @@ impl Server {
         }
     }
 
+    /// Starts a background task that periodically checks for action timeouts
+    /// and applies auto‑fold to players who have exceeded the timeout.
+    pub fn start_timeout_checker(self) {
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                // Check for timed‑out players
+                let timed_out = {
+                    let tm = self.table_manager.lock().await;
+                    tm.check_action_timeouts()
+                };
+                for (table_id, seat) in timed_out {
+                    self.apply_auto_fold(table_id, seat).await;
+                }
+            }
+        });
+    }
+
     pub async fn bind(&self) -> Result<TcpListener> {
         let listener = TcpListener::bind(&self.config.bind_address).await?;
         info!("server listening on {}", self.config.bind_address);
@@ -295,6 +315,8 @@ impl Server {
 
     pub async fn run(&self, listener: TcpListener) -> Result<()> {
         let server = self.clone();
+        // Start background timeout checker
+        self.clone().start_timeout_checker();
         loop {
             let (stream, peer_addr) = listener.accept().await?;
             info!("new connection from {}", peer_addr);

@@ -1,14 +1,14 @@
-use server::audit_log::AuditLog;
-use game_engine::{HandId, TableId};
-use uuid::Uuid;
 use base64::Engine;
+use game_engine::{HandId, TableId};
+use server::audit_log::AuditLog;
 use std::fs;
+use uuid::Uuid;
 
 #[test]
 fn test_encrypt_decrypt_seed() {
     let key = [0x42u8; 32];
     let seed = [0x99u8; 32];
-    
+
     // Encrypt using zero nonce (default encrypt_seed)
     let encrypted = AuditLog::encrypt_seed(seed, &key).unwrap();
     // decrypt_seed expects nonce base64 (zero nonce)
