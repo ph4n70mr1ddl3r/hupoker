@@ -185,8 +185,7 @@ impl Hand {
         let mut winners = Vec::new();
         for &seat in &active_seats {
             let hole = &self.hole_cards[seat as usize];
-            let mut cards = hole.clone();
-            cards.extend_from_slice(&self.community_cards);
+            let cards: Vec<_> = hole.iter().chain(self.community_cards.iter()).copied().collect();
             let rank = super::hand_evaluation::evaluate_hand(&cards);
             if rank > best_rank {
                 best_rank = rank;
@@ -205,7 +204,7 @@ impl Hand {
         }
         if self.small_blind >= self.big_blind {
             return Err(format!(
-                "small_blind ({}) must be less than big_blind ({})",
+                "small_blind ({}) must be strictly less than big_blind ({})",
                 self.small_blind, self.big_blind
             ));
         }

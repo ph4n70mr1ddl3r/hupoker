@@ -59,17 +59,22 @@ fn is_straight(cards: &[Card]) -> bool {
     values.dedup();
     // handle ace low straight
     if values.contains(&14) {
-        let mut low_values = values.clone();
-        low_values.iter_mut().for_each(|v| {
-            if *v == 14 {
-                *v = 1
+        let mut low_ace_present = false;
+        for &v in &values {
+            if v == 14 {
+                low_ace_present = true;
+                break;
             }
-        });
-        low_values.sort();
-        low_values.dedup();
-        for window in low_values.windows(5) {
-            if window[4] - window[0] == 4 {
-                return true;
+        }
+        if low_ace_present {
+            let mut low_values: Vec<u8> =
+                values.iter().map(|&v| if v == 14 { 1 } else { v }).collect();
+            low_values.sort();
+            low_values.dedup();
+            for window in low_values.windows(5) {
+                if window[4] - window[0] == 4 {
+                    return true;
+                }
             }
         }
     }
@@ -94,7 +99,9 @@ fn count_ranks(cards: &[Card]) -> Vec<(Rank, u8)> {
 }
 
 fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
-    assert!(cards.len() == 5);
+    if cards.len() != 5 {
+        return HandRank::HighCard;
+    }
     let counts = count_ranks(cards);
     let is_flush = is_flush(cards);
     let is_straight = is_straight(cards);

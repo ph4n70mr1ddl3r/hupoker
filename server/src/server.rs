@@ -375,7 +375,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
 
     // Create channel for outgoing messages and spawn writer task
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _writer_task = tokio::spawn(async move {
+    tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let Err(e) = write_message(&mut writer, &msg).await {
                 debug!("failed to write message: {}", e);

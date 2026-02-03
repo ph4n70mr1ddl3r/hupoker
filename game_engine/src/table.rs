@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[allow(unused_imports)]
 use super::{Hand, HandId, Player, Seat};
 
 pub type ChipCount = u64;
