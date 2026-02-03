@@ -21,7 +21,8 @@ impl eframe::App for HupokerApp {
                 // Ensure table view exists
                 if self.table_view.is_none() {
                     let table_id = table_state.table_id.clone();
-                    let player_seat = 0; // TODO: get actual seat
+                    // TODO: Allow seat selection in UI. Currently defaults to seat 0.
+                    let player_seat = 0;
                     let connection = self.connection_dialog.connection.take();
                     self.table_view = Some(TableView::new(player_seat, table_id, connection));
                 } else {

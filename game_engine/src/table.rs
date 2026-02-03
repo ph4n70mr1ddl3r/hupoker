@@ -115,9 +115,11 @@ impl Table {
         if self.current_hand.is_some() {
             return Err("cannot start hand: a hand is already in progress".to_string());
         }
-        // Collect player stacks
-        let player_stacks =
-            [self.seats[0].as_ref().unwrap().stack, self.seats[1].as_ref().unwrap().stack];
+        // Collect player stacks (safe since we already validated both seats are occupied)
+        let player_stacks = [
+            self.seats[0].as_ref().map(|p| p.stack).ok_or("seat 0 should be occupied")?,
+            self.seats[1].as_ref().map(|p| p.stack).ok_or("seat 1 should be occupied")?,
+        ];
         // Determine button position
         let button_position = self.next_button_position;
         // Create hand

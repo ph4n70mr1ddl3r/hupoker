@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     let key = env::var("HUPOKER_ENCRYPTION_KEY").ok().and_then(|hex_key| {
         hex::decode(hex_key).ok().and_then(|bytes| {
             if bytes.len() == 32 {
-                Some(bytes.try_into().unwrap())
+                bytes.try_into().ok()
             } else {
                 None
             }

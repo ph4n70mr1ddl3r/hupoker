@@ -104,7 +104,7 @@ impl ConnectionDialog {
         self.hand_state = None;
 
         let address = self.server_address.clone();
-        let rt = Runtime::new().unwrap();
+        let rt = Runtime::new().expect("failed to create tokio runtime");
         let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
             rt.block_on(async {
                 // Connect TCP
@@ -124,7 +124,8 @@ impl ConnectionDialog {
                 self.hand_state = hand_states.into_iter().next(); // store first hand state, if any
                 self.connection_status = ConnectionStatus::Connected;
                 self.reconnect_table_id = Some(table_id);
-                self.reconnect_seat = Some(0); // hardcoded for now
+                // TODO: Support seat selection. Currently hardcoded to seat 0.
+                self.reconnect_seat = Some(0);
                 self.reconnect_attempts = 0;
                 self.last_reconnect_attempt = None;
             }
@@ -150,7 +151,7 @@ impl ConnectionDialog {
     fn start_reconnecting(&mut self) {
         if let Some(table_state) = &self.table_state {
             self.reconnect_table_id = Some(table_state.table_id.clone());
-            // Determine which seat we were occupying (hardcoded to seat 0 for now)
+            // TODO: Track which seat we were occupying. Currently hardcoded to seat 0.
             self.reconnect_seat = Some(0);
         }
         self.connection_status = ConnectionStatus::Reconnecting;
@@ -181,7 +182,7 @@ impl ConnectionDialog {
         let table_id = table_id.unwrap();
         let seat = seat.unwrap();
 
-        let rt = Runtime::new().unwrap();
+        let rt = Runtime::new().expect("failed to create tokio runtime");
         let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
             rt.block_on(async {
                 let mut conn = Connection::connect(&address).await?;

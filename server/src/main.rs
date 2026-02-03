@@ -16,7 +16,7 @@ fn main() -> Result<()> {
         .and_then(|key| hex::decode(key).ok())
         .and_then(|bytes| {
             if bytes.len() == 32 {
-                Some(bytes.try_into().unwrap())
+                bytes.try_into().ok()
             } else {
                 tracing::warn!("encryption key must be 32 bytes, got {} bytes", bytes.len());
                 None

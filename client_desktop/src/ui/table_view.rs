@@ -25,6 +25,7 @@ pub struct TableView {
     pub time_remaining_received: Option<f64>,
     pub last_sent_action: Option<ActionKind>,
     pub notification: Option<String>,
+    runtime: Option<Runtime>,
 }
 
 impl TableView {
@@ -50,6 +51,7 @@ impl TableView {
             time_remaining_received: None,
             last_sent_action: None,
             notification: None,
+            runtime: Runtime::new().ok(),
         }
     }
 
@@ -110,7 +112,7 @@ impl TableView {
     ) -> Result<(), anyhow::Error> {
         let hand_id = self.hand_id.ok_or_else(|| anyhow!("no active hand"))?;
         let conn = self.connection.as_mut().ok_or_else(|| anyhow!("no connection"))?;
-        let rt = Runtime::new()?;
+        let rt = self.runtime.as_mut().ok_or_else(|| anyhow!("tokio runtime not available"))?;
         self.error_message = None;
         self.last_sent_action = Some(kind);
         let response = rt.block_on(async {
@@ -270,15 +272,15 @@ impl TableView {
                 let _ = self.handle_action(ActionKind::Check, None);
             }
             if ui.button("Call").clicked() {
-                // TODO: need amount to call
+                // TODO: Calculate actual call amount based on current bets and player stack
                 let _ = self.handle_action(ActionKind::Call, Some(100));
             }
             if ui.button("Bet").clicked() {
-                // TODO: need bet amount
+                // TODO: Implement UI for bet amount selection with minimum bet validation
                 let _ = self.handle_action(ActionKind::Bet, Some(100));
             }
             if ui.button("Raise").clicked() {
-                // TODO: need raise amount
+                // TODO: Implement UI for raise amount with minimum raise validation
                 let _ = self.handle_action(ActionKind::Raise, Some(200));
             }
         });
