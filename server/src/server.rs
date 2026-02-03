@@ -359,14 +359,13 @@ async fn handle_handshake(
     let version = match client_hello {
         Message::ClientHello { version, .. } => version,
         _ => {
-            warn!("first message not ClientHello");
+            warn!("first message not ClientHello, got: {:?}", client_hello);
             return Ok(false);
         }
     };
     // Validate version (simple check: major version == 1)
     if !version.starts_with("1.") {
-        // Send error? For now, just close.
-        warn!("unsupported version {}", version);
+        warn!("unsupported version {}, expected 1.x", version);
         return Ok(false);
     }
     // Send ServerHello accepting the connection
@@ -793,8 +792,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 }
             }
             _ => {
-                warn!("unexpected message type");
-                // Send error
+                warn!("unexpected message type: {:?}", msg);
                 let error = Message::Error {
                     version: PROTOCOL_VERSION.to_string(),
                     code: "unexpected_message".to_string(),

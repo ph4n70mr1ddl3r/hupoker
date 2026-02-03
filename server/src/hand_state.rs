@@ -3,6 +3,8 @@ use game_engine::{Hand, Seat};
 
 use crate::protocol::messages::{HandState, Message};
 
+const PROTOCOL_VERSION: &str = "1.0";
+
 /// Creates a HandState message for a specific player.
 /// `hand` is the current hand.
 /// `table_id` identifies the table.
@@ -16,10 +18,8 @@ pub fn create_hand_state(
     acting_seat: Option<Seat>,
     time_remaining_ms: u64,
 ) -> HandState {
-    // Determine hole cards for this player
     let hole_cards =
         if player_seat < 2 { hand.hole_cards[player_seat as usize].clone() } else { Vec::new() };
-    // Format last_action_time as ISO 8601 string
     let last_action_time =
         hand.last_action_time.map(|dt| dt.to_rfc3339()).unwrap_or_else(|| Utc::now().to_rfc3339());
     HandState {
@@ -48,7 +48,7 @@ pub fn create_hand_state_message(
 ) -> Message {
     let hand_state = create_hand_state(hand, table_id, player_seat, acting_seat, time_remaining_ms);
     Message::HandState {
-        version: "1.0".to_string(),
+        version: PROTOCOL_VERSION.to_string(),
         hand_id: hand_state.hand_id,
         table_id: hand_state.table_id,
         hole_cards: hand_state.hole_cards,
