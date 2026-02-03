@@ -5,17 +5,21 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{interval, Duration};
 
 use tokio::sync::Mutex;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::protocol::messages::Message;
 use crate::{
-    audit_log::AuditLog, connection_manager::ConnectionManager,
-    hand_state::create_hand_state_message, table_manager::TableManager,
+    audit_log::AuditLog,
+    connection_manager::{ConnectionManager, ConnectionSender},
+    hand_state::create_hand_state_message,
+    table_manager::TableManager,
 };
 use game_engine::{Action, ActionKind, ServerConfig, Street};
 
 const MILLISECONDS_PER_SECOND: u64 = 1000;
 const DEFAULT_STACK_SIZE: u64 = 1500;
+const PROTOCOL_VERSION: &str = "1.0";
+const NUM_SEATS: u8 = 2;
 
 #[derive(Clone)]
 pub struct Server {
@@ -61,29 +65,28 @@ impl Server {
         hand: &game_engine::Hand,
         winners: &[game_engine::Seat],
     ) {
-        if winners.is_empty() {
-            let mut tm = self.table_manager.lock().await;
-            let table = tm.get_table_mut(table_id).expect("table must exist");
-            table.current_hand = None;
-            let table_state =
-                Self::create_table_state_message(table_id, &table.seats, &table.config, None);
-            drop(tm);
-            self.connection_manager.broadcast_to_table(table_id, |_| table_state.clone()).await;
-        } else {
+        let mut tm = self.table_manager.lock().await;
+        let table = match tm.get_table_mut(table_id) {
+            Some(t) => t,
+            None => {
+                error!("table {} not found in finish_hand", table_id.as_str());
+                return;
+            }
+        };
+
+        if !winners.is_empty() {
             let awards = Self::award_pots_to_winners(hand, winners);
-            let mut tm = self.table_manager.lock().await;
-            let table = tm.get_table_mut(table_id).expect("table must exist");
             for (seat, award) in awards.iter().enumerate() {
                 if let Some(player) = table.seats[seat].as_mut() {
                     player.stack += award;
                 }
             }
-            table.current_hand = None;
-            let table_state =
-                Self::create_table_state_message(table_id, &table.seats, &table.config, None);
-            drop(tm);
-            self.connection_manager.broadcast_to_table(table_id, |_| table_state.clone()).await;
         }
+        table.current_hand = None;
+        let table_state =
+            Self::create_table_state_message(table_id, &table.seats, &table.config, None);
+        drop(tm);
+        self.connection_manager.broadcast_to_table(table_id, |_| table_state.clone()).await;
     }
 
     fn create_table_state_message(
@@ -93,7 +96,7 @@ impl Server {
         current_hand_id: Option<game_engine::HandId>,
     ) -> Message {
         Message::TableState {
-            version: "1.0".to_string(),
+            version: PROTOCOL_VERSION.to_string(),
             table_id: table_id.clone(),
             seats: seats
                 .iter()
@@ -164,6 +167,7 @@ impl Server {
         let hand_id = tm
             .start_hand(table_id, seed)
             .map_err(|e| anyhow::anyhow!("failed to start hand: {}", e))?;
+        drop(tm);
         // Log seed to audit log (encrypted)
         {
             let mut audit_log = self.audit_log.lock().await;
@@ -174,6 +178,7 @@ impl Server {
         }
         info!("started hand {:?} at table {}", hand_id, table_id.as_str());
         // Get the newly created hand
+        let tm = self.table_manager.lock().await;
         let hand = tm
             .get_table(table_id)
             .and_then(|t| t.current_hand.as_ref())
@@ -223,17 +228,20 @@ impl Server {
             error!("failed to apply auto-fold: {}", e);
             return;
         }
+        // Clone needed data for logging and broadcasting
+        let hand_id = hand.id;
+        let action_kind = action.kind;
+        let action_amount = action.amount;
+        let hand_clone = hand.clone();
+        let config = table.config.clone();
+        drop(tm);
         // Log action
         {
             let mut audit_log = self.audit_log.lock().await;
-            if let Err(e) = audit_log.log_action(hand.id, seat, action.kind, action.amount) {
+            if let Err(e) = audit_log.log_action(hand_id, seat, action_kind, action_amount) {
                 error!("failed to log auto-fold action: {}", e);
             }
         }
-        // Clone hand for broadcasting and hand end processing
-        let hand_clone = hand.clone();
-        let config = table.config.clone();
-        drop(tm); // release lock before broadcasting
 
         // Broadcast updated hand state (fold action applied)
         let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
@@ -330,21 +338,20 @@ impl Server {
     }
 }
 
-async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
+/// Handles the initial handshake protocol with a connecting client.
+/// Reads ClientHello, validates version, and sends ServerHello.
+/// Returns Ok(true) if handshake succeeded, Ok(false) if client should be disconnected.
+async fn handle_handshake(
+    reader: &mut tokio::io::BufReader<tokio::io::ReadHalf<TcpStream>>,
+    writer: &mut tokio::io::BufWriter<tokio::io::WriteHalf<TcpStream>>,
+) -> Result<bool> {
     use crate::protocol::codec::{read_message, write_message};
     use crate::protocol::messages::Message;
-    use game_engine::{ConnectionId, Player};
-    use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
-    use tokio::sync::mpsc;
+    use tokio::io::AsyncWriteExt;
     use tracing::{debug, warn};
-    use uuid::Uuid;
-
-    let (read_half, write_half) = tokio::io::split(stream);
-    let mut reader = BufReader::new(read_half);
-    let mut writer = BufWriter::new(write_half);
 
     // Step 1: read ClientHello
-    let client_hello: Message = read_message(&mut reader).await?;
+    let client_hello: Message = read_message(reader).await?;
     debug!("received {:?}", client_hello);
     let (version, _client_name, _client_version) = match client_hello {
         Message::ClientHello {
@@ -354,25 +361,212 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
         } => (version, _client_name, _client_version),
         _ => {
             warn!("first message not ClientHello");
-            return Ok(());
+            return Ok(false);
         }
     };
     // Validate version (simple check: major version == 1)
     if !version.starts_with("1.") {
         // Send error? For now, just close.
         warn!("unsupported version {}", version);
-        return Ok(());
+        return Ok(false);
     }
     // Send ServerHello accepting the connection
     let server_hello = Message::ServerHello {
-        version: "1.0".to_string(),
+        version: PROTOCOL_VERSION.to_string(),
         status: "accepted".to_string(),
         server_name: "hupoker-server".to_string(),
         server_version: "0.1.0".to_string(),
     };
-    write_message(&mut writer, &server_hello).await?;
+    write_message(writer, &server_hello).await?;
     writer.flush().await?;
     debug!("sent ServerHello");
+    Ok(true)
+}
+
+/// Handles a JoinTable message from a client.
+/// Attempts to occupy the requested seat and sends table state.
+/// Returns true if connection should continue, false if connection should close.
+async fn handle_join_table(
+    server: &Server,
+    table_id: game_engine::TableId,
+    seat: u8,
+    connection_id: game_engine::ConnectionId,
+    tx: &ConnectionSender,
+    current_table: &mut Option<game_engine::TableId>,
+    current_seat: &mut Option<u8>,
+) -> bool {
+    use crate::protocol::messages::Message;
+    use game_engine::Player;
+    use tracing::error;
+
+    // Validate seat
+    if seat >= NUM_SEATS {
+        // Send error via channel
+        let error = Message::Error {
+            version: PROTOCOL_VERSION.to_string(),
+            code: "invalid_seat".to_string(),
+            message: format!("seat must be between 0 and {}", NUM_SEATS - 1),
+            original_type: "join_table".to_string(),
+        };
+        if tx.send(error).is_err() {
+            server.cleanup_connection(current_table.as_ref(), *current_seat).await;
+            return false;
+        }
+        return true;
+    }
+    // Attempt to occupy seat and get table state
+    let result: Result<_, String> = {
+        let mut tm = server.table_manager.lock().await;
+        // Get starting stack from table config (default to 1500 if table not found)
+        let starting_stack =
+            tm.get_table(&table_id).map(|t| t.config.starting_stack).unwrap_or(DEFAULT_STACK_SIZE);
+        // Create player object
+        let player = Player {
+            seat,
+            stack: starting_stack,
+            connection_id,
+            disconnected_at: None,
+            is_sitting_out: false,
+        };
+        if let Err(e) = tm.occupy_seat(&table_id, seat, player) {
+            Err(e)
+        } else {
+            // Build TableState
+            let table = match tm.get_table(&table_id) {
+                Some(t) => t,
+                None => {
+                    server.cleanup_connection(current_table.as_ref(), *current_seat).await;
+                    return false;
+                }
+            };
+            let seats = table
+                .seats
+                .iter()
+                .enumerate()
+                .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                    seat: i as u8,
+                    player: maybe_player.clone(),
+                })
+                .collect();
+            Ok((table.config.clone(), seats))
+        }
+    };
+    match result {
+        Ok((config, seats)) => {
+            // Register this connection with the connection manager
+            server.connection_manager.register(table_id.clone(), seat, tx.clone()).await;
+            *current_table = Some(table_id.clone());
+            *current_seat = Some(seat);
+            // Attempt to start a hand if both seats are now occupied
+            let current_hand_id = match server.start_hand_if_possible(&table_id).await {
+                Ok(hand_id) => hand_id,
+                Err(e) => {
+                    error!("failed to start hand: {}", e);
+                    None
+                }
+            };
+            let table_state = Message::TableState {
+                version: PROTOCOL_VERSION.to_string(),
+                table_id: table_id.clone(),
+                seats,
+                config,
+                current_hand_id,
+            };
+            if tx.send(table_state).is_err() {
+                server.cleanup_connection(current_table.as_ref(), *current_seat).await;
+                return false;
+            }
+            // If a hand is already in progress, send HandState to this player
+            let hand_state_msg = {
+                let tm = server.table_manager.lock().await;
+                if let Some(table) = tm.get_table(&table_id) {
+                    if let Some(hand) = &table.current_hand {
+                        let time_remaining_ms =
+                            table.config.action_timeout_secs * MILLISECONDS_PER_SECOND;
+                        let acting_seat = hand.betting.acting_seat(hand.button_position);
+                        Some(create_hand_state_message(
+                            hand,
+                            table_id.clone(),
+                            seat,
+                            acting_seat,
+                            time_remaining_ms,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+            if let Some(msg) = hand_state_msg {
+                if tx.send(msg).is_err() {
+                    server.cleanup_connection(current_table.as_ref(), *current_seat).await;
+                    return false;
+                }
+            }
+        }
+        Err(e) => {
+            let error = Message::Error {
+                version: PROTOCOL_VERSION.to_string(),
+                code: "seat_taken".to_string(),
+                message: e,
+                original_type: "join_table".to_string(),
+            };
+            if tx.send(error).is_err() {
+                server.cleanup_connection(current_table.as_ref(), *current_seat).await;
+                return false;
+            }
+            // Unregister this connection if it was registered
+            if let (Some(table_id), Some(seat)) = (current_table.as_ref(), *current_seat) {
+                server.connection_manager.unregister(table_id, seat).await;
+            }
+        }
+    }
+    true
+}
+
+/// Handles a Heartbeat message from a client.
+/// Echoes the heartbeat back to the client.
+/// Returns true if connection should continue, false if connection should close.
+async fn handle_heartbeat(
+    tx: &ConnectionSender,
+    server: &Server,
+    current_table: &Option<game_engine::TableId>,
+    current_seat: Option<u8>,
+) -> bool {
+    use crate::protocol::messages::Message;
+    use chrono::Utc;
+
+    // Echo heartbeat
+    let heartbeat = Message::Heartbeat {
+        version: PROTOCOL_VERSION.to_string(),
+        timestamp: Utc::now().to_rfc3339(),
+    };
+    if tx.send(heartbeat).is_err() {
+        server.cleanup_connection(current_table.as_ref(), current_seat).await;
+        false
+    } else {
+        true
+    }
+}
+
+async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
+    use crate::protocol::codec::{read_message, write_message};
+    use crate::protocol::messages::Message;
+    use game_engine::ConnectionId;
+    use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
+    use tokio::sync::mpsc;
+    use tracing::debug;
+    use uuid::Uuid;
+
+    let (read_half, write_half) = tokio::io::split(stream);
+    let mut reader = BufReader::new(read_half);
+    let mut writer = BufWriter::new(write_half);
+
+    // Perform handshake
+    if !handle_handshake(&mut reader, &mut writer).await? {
+        return Ok(());
+    }
 
     // Create channel for outgoing messages and spawn writer task
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -407,140 +601,22 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
         debug!("received {:?}", msg);
         match msg {
             Message::JoinTable { version: _, table_id, seat } => {
-                // Validate seat
-                if seat != 0 && seat != 1 {
-                    // Send error via channel
-                    let error = Message::Error {
-                        version: "1.0".to_string(),
-                        code: "invalid_seat".to_string(),
-                        message: "seat must be 0 or 1".to_string(),
-                        original_type: "join_table".to_string(),
-                    };
-                    if tx.send(error).is_err() {
-                        break Ok(());
-                    }
-                    continue;
-                }
-                // Attempt to occupy seat and get table state
-                let result: Result<_, String> = {
-                    let mut tm = server.table_manager.lock().await;
-                    // Get starting stack from table config (default to 1500 if table not found)
-                    let starting_stack = tm
-                        .get_table(&table_id)
-                        .map(|t| t.config.starting_stack)
-                        .unwrap_or(DEFAULT_STACK_SIZE);
-                    // Create player object
-                    let player = Player {
-                        seat,
-                        stack: starting_stack,
-                        connection_id,
-                        disconnected_at: None,
-                        is_sitting_out: false,
-                    };
-                    if let Err(e) = tm.occupy_seat(&table_id, seat, player) {
-                        Err(e)
-                    } else {
-                        // Build TableState
-                        let table = tm.get_table(&table_id).expect("table must exist");
-                        let seats = table
-                            .seats
-                            .iter()
-                            .enumerate()
-                            .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                seat: i as u8,
-                                player: maybe_player.clone(),
-                            })
-                            .collect();
-                        Ok((table.config.clone(), seats))
-                    }
-                };
-                match result {
-                    Ok((config, seats)) => {
-                        // Register this connection with the connection manager
-                        server
-                            .connection_manager
-                            .register(table_id.clone(), seat, tx.clone())
-                            .await;
-                        current_table = Some(table_id.clone());
-                        current_seat = Some(seat);
-                        // Attempt to start a hand if both seats are now occupied
-                        let current_hand_id = match server.start_hand_if_possible(&table_id).await {
-                            Ok(hand_id) => hand_id,
-                            Err(e) => {
-                                error!("failed to start hand: {}", e);
-                                None
-                            }
-                        };
-                        let table_state = Message::TableState {
-                            version: "1.0".to_string(),
-                            table_id: table_id.clone(),
-                            seats,
-                            config,
-                            current_hand_id,
-                        };
-                        if tx.send(table_state).is_err() {
-                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
-                            break Ok(());
-                        }
-                        // If a hand is already in progress, send HandState to this player
-                        let hand_state_msg = {
-                            let tm = server.table_manager.lock().await;
-                            if let Some(table) = tm.get_table(&table_id) {
-                                if let Some(hand) = &table.current_hand {
-                                    let time_remaining_ms =
-                                        table.config.action_timeout_secs * MILLISECONDS_PER_SECOND;
-                                    let acting_seat =
-                                        hand.betting.acting_seat(hand.button_position);
-                                    Some(create_hand_state_message(
-                                        hand,
-                                        table_id.clone(),
-                                        seat,
-                                        acting_seat,
-                                        time_remaining_ms,
-                                    ))
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            }
-                        };
-                        if let Some(msg) = hand_state_msg {
-                            if tx.send(msg).is_err() {
-                                server
-                                    .cleanup_connection(current_table.as_ref(), current_seat)
-                                    .await;
-                                break Ok(());
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let error = Message::Error {
-                            version: "1.0".to_string(),
-                            code: "seat_taken".to_string(),
-                            message: e,
-                            original_type: "join_table".to_string(),
-                        };
-                        if tx.send(error).is_err() {
-                            server.cleanup_connection(current_table.as_ref(), current_seat).await;
-                            break Ok(());
-                        }
-                        // Unregister this connection if it was registered
-                        if let (Some(table_id), Some(seat)) = (current_table.as_ref(), current_seat)
-                        {
-                            server.connection_manager.unregister(table_id, seat).await;
-                        }
-                    }
+                if !handle_join_table(
+                    &server,
+                    table_id,
+                    seat,
+                    connection_id,
+                    &tx,
+                    &mut current_table,
+                    &mut current_seat,
+                )
+                .await
+                {
+                    break Ok(());
                 }
             }
             Message::Heartbeat { version: _, timestamp: _ } => {
-                // Echo heartbeat
-                let heartbeat = Message::Heartbeat {
-                    version: "1.0".to_string(),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                };
-                if tx.send(heartbeat).is_err() {
-                    server.cleanup_connection(current_table.as_ref(), current_seat).await;
+                if !handle_heartbeat(&tx, &server, &current_table, current_seat).await {
                     break Ok(());
                 }
             }
@@ -550,7 +626,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     (Some(table_id), Some(seat)) => (table_id.clone(), seat),
                     _ => {
                         let error = Message::Error {
-                            version: "1.0".to_string(),
+                            version: PROTOCOL_VERSION.to_string(),
                             code: "not_at_table".to_string(),
                             message: "must join a table before acting".to_string(),
                             original_type: "action".to_string(),
@@ -569,7 +645,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     None => {
                         drop(tm);
                         let error = Message::Error {
-                            version: "1.0".to_string(),
+                            version: PROTOCOL_VERSION.to_string(),
                             code: "table_not_found".to_string(),
                             message: "table no longer exists".to_string(),
                             original_type: "action".to_string(),
@@ -586,7 +662,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     _ => {
                         drop(tm);
                         let error = Message::Error {
-                            version: "1.0".to_string(),
+                            version: PROTOCOL_VERSION.to_string(),
                             code: "hand_not_found".to_string(),
                             message: "hand not found or not active".to_string(),
                             original_type: "action".to_string(),
@@ -603,7 +679,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 if acting_seat != Some(seat) {
                     drop(tm);
                     let error = Message::Error {
-                        version: "1.0".to_string(),
+                        version: PROTOCOL_VERSION.to_string(),
                         code: "not_your_turn".to_string(),
                         message: "it is not your turn to act".to_string(),
                         original_type: "action".to_string(),
@@ -620,7 +696,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 if let Err(e) = hand.apply_action(action.clone()) {
                     drop(tm);
                     let error = Message::Error {
-                        version: "1.0".to_string(),
+                        version: PROTOCOL_VERSION.to_string(),
                         code: "illegal_action".to_string(),
                         message: e,
                         original_type: "action".to_string(),
@@ -631,17 +707,21 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     }
                     continue;
                 }
+                // Clone needed data for logging and broadcasting
+                let hand_id = hand.id;
+                let action_kind = kind;
+                let action_amount = amount;
+                let config = table.config.clone();
+                let hand_clone = hand.clone();
+                drop(tm);
                 // Log action to audit log
                 {
                     let mut audit_log = server.audit_log.lock().await;
-                    if let Err(e) = audit_log.log_action(hand.id, seat, kind, amount) {
+                    if let Err(e) = audit_log.log_action(hand_id, seat, action_kind, action_amount)
+                    {
                         error!("failed to log action: {}", e);
                     }
                 }
-                // Success: broadcast updated hand state
-                let config = table.config.clone();
-                let hand_clone = hand.clone();
-                drop(tm); // release lock before broadcasting
 
                 // Determine acting seat for next player (or None if round complete)
                 let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
@@ -746,7 +826,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 warn!("unexpected message type");
                 // Send error
                 let error = Message::Error {
-                    version: "1.0".to_string(),
+                    version: PROTOCOL_VERSION.to_string(),
                     code: "unexpected_message".to_string(),
                     message: "message not allowed in current state".to_string(),
                     original_type: "unknown".to_string(),
