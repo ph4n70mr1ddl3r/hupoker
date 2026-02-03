@@ -46,20 +46,23 @@ pub fn create_hand_state_message(
     acting_seat: Option<Seat>,
     time_remaining_ms: u64,
 ) -> Message {
-    let hand_state = create_hand_state(hand, table_id, player_seat, acting_seat, time_remaining_ms);
+    let hole_cards =
+        if player_seat < 2 { hand.hole_cards[player_seat as usize].clone() } else { Vec::new() };
+    let last_action_time =
+        hand.last_action_time.map(|dt| dt.to_rfc3339()).unwrap_or_else(|| Utc::now().to_rfc3339());
     Message::HandState {
         version: PROTOCOL_VERSION.to_string(),
-        hand_id: hand_state.hand_id,
-        table_id: hand_state.table_id,
-        hole_cards: hand_state.hole_cards,
-        community_cards: hand_state.community_cards,
-        pot: hand_state.pot,
-        current_street: hand_state.current_street,
-        actions: hand_state.actions,
-        player_stacks: hand_state.player_stacks,
-        button_position: hand_state.button_position,
-        last_action_time: hand_state.last_action_time,
-        acting_seat: hand_state.acting_seat,
-        time_remaining_ms: hand_state.time_remaining_ms,
+        hand_id: hand.id,
+        table_id,
+        hole_cards,
+        community_cards: hand.community_cards.clone(),
+        pot: hand.pot.clone(),
+        current_street: hand.current_street,
+        actions: hand.actions.clone(),
+        player_stacks: hand.player_stacks,
+        button_position: hand.button_position,
+        last_action_time,
+        acting_seat,
+        time_remaining_ms,
     }
 }

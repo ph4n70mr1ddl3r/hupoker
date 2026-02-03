@@ -155,9 +155,13 @@ impl Betting {
                 }
                 // Player can call less if all-in (amount < call_amount)
                 let actual_call = amount.min(call_amount);
-                self.bets[seat as usize] += actual_call;
-                self.total_pot += actual_call;
-                self.stacks[seat as usize] -= actual_call;
+                // Explicit check to prevent stack underflow
+                if actual_call > self.stacks[seat as usize] {
+                    return Err(BettingError::InsufficientStack);
+                }
+                self.bets[seat as usize] = self.bets[seat as usize].saturating_add(actual_call);
+                self.total_pot = self.total_pot.saturating_add(actual_call);
+                self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(actual_call);
                 // If player went all-in and amount < call_amount, side pot logic later.
                 // For now, treat as call.
                 self.mark_action(seat);
@@ -176,11 +180,11 @@ impl Betting {
                 if bet_amount < self.min_raise {
                     return Err(BettingError::BelowMinRaise);
                 }
-                self.bets[seat as usize] += bet_amount;
+                self.bets[seat as usize] = self.bets[seat as usize].saturating_add(bet_amount);
                 self.current_high = bet_amount;
                 self.min_raise = bet_amount; // minimum raise becomes the bet amount (difference)
-                self.total_pot += bet_amount;
-                self.stacks[seat as usize] -= bet_amount;
+                self.total_pot = self.total_pot.saturating_add(bet_amount);
+                self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(bet_amount);
                 // Reset acted flags because a new bet level resets the round
                 self.acted_this_round = [false, false];
                 self.mark_action(seat);
@@ -196,7 +200,7 @@ impl Betting {
                     return Err(BettingError::InsufficientStack);
                 }
                 // Total bet after raise must be at least current_high + min_raise
-                let total_bet_after = self.bets[seat as usize] + raise_amount;
+                let total_bet_after = self.bets[seat as usize].saturating_add(raise_amount);
                 if total_bet_after < self.current_high + self.min_raise {
                     // Unless player is all-in (raise_amount equals their remaining stack)
                     let is_all_in = raise_amount == self.stacks[seat as usize];
@@ -207,11 +211,15 @@ impl Betting {
                 }
                 // Update
                 let additional = raise_amount;
-                self.bets[seat as usize] += additional;
-                self.total_pot += additional;
-                self.stacks[seat as usize] -= additional;
+                // Explicit check to prevent stack underflow
+                if additional > self.stacks[seat as usize] {
+                    return Err(BettingError::InsufficientStack);
+                }
+                self.bets[seat as usize] = self.bets[seat as usize].saturating_add(additional);
+                self.total_pot = self.total_pot.saturating_add(additional);
+                self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(additional);
                 if total_bet_after > self.current_high {
-                    self.min_raise = total_bet_after - self.current_high;
+                    self.min_raise = total_bet_after.saturating_sub(self.current_high);
                     self.current_high = total_bet_after;
                     // Reset acted flags because a raise resets the round
                     self.acted_this_round = [false, false];

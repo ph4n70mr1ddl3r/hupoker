@@ -147,15 +147,19 @@ impl AuditLog {
 
     pub fn decrypt_seed(encrypted_with_nonce: &str, key: &[u8; 32]) -> Result<[u8; 32]> {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
-        let parts: Vec<&str> = encrypted_with_nonce.split(':').collect();
-        if parts.len() != 2 {
+        // Check format before splitting to prevent panic on malformed input
+        if !encrypted_with_nonce.contains(':') {
+            return Err(anyhow::anyhow!("invalid encrypted seed format, expected nonce:encrypted"));
+        }
+        let parts: Vec<&str> = encrypted_with_nonce.splitn(2, ':').collect();
+        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
             return Err(anyhow::anyhow!("invalid encrypted seed format, expected nonce:encrypted"));
         }
         let nonce_bytes = general_purpose::STANDARD
             .decode(parts[0])
             .map_err(|e| anyhow::anyhow!("failed to decode nonce: {}", e))?;
         if nonce_bytes.len() != 12 {
-            return Err(anyhow::anyhow!("nonce must be 12 bytes"));
+            return Err(anyhow::anyhow!("nonce must be 12 bytes, got {}", nonce_bytes.len()));
         }
         let nonce = Nonce::from_slice(&nonce_bytes);
         let encrypted = general_purpose::STANDARD
@@ -165,7 +169,7 @@ impl AuditLog {
             .decrypt(nonce, encrypted.as_ref())
             .map_err(|e| anyhow::anyhow!("seed decryption failed: {}", e))?;
         if seed.len() != 32 {
-            return Err(anyhow::anyhow!("decrypted seed must be 32 bytes"));
+            return Err(anyhow::anyhow!("decrypted seed must be 32 bytes, got {}", seed.len()));
         }
         let mut seed_array = [0u8; 32];
         seed_array.copy_from_slice(&seed);

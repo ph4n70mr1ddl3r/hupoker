@@ -41,13 +41,21 @@ impl ConnectionManager {
     }
 
     /// Send a message to a specific seat at a specific table.
-    /// If the seat is not registered, the message is silently dropped.
+    /// If the seat is not registered or the sender is closed, the message is silently dropped
+    /// and the sender is removed from the map.
     pub async fn send_to_seat(&self, table_id: &TableId, seat: Seat, msg: Message) {
-        let inner = self.inner.lock().await;
-        let key = (table_id.clone(), seat);
-        if let Some(tx) = inner.connections.get(&key) {
+        let tx = {
+            let inner = self.inner.lock().await;
+            let key = (table_id.clone(), seat);
+            inner.connections.get(&key).cloned()
+        };
+        if let Some(tx) = tx {
             if tx.send(msg).is_err() {
-                warn!("failed to send message to seat {} at table {}", seat, table_id.as_str());
+                // Sender is closed, remove it from the map
+                let mut inner = self.inner.lock().await;
+                let key = (table_id.clone(), seat);
+                inner.connections.remove(&key);
+                warn!("removed broken sender for seat {} at table {}", seat, table_id.as_str());
             }
         } else {
             warn!("no connection for seat {} at table {}", seat, table_id.as_str());
@@ -55,20 +63,41 @@ impl ConnectionManager {
     }
 
     /// Broadcast a message to both seats at a table.
-    /// If a seat is not registered, the message is not sent to that seat.
+    /// If a seat is not registered or the sender is closed, the message is not sent to that seat
+    /// and the sender is removed from the map.
     pub async fn broadcast_to_table(
         &self,
         table_id: &TableId,
         msg_factory: impl Fn(Seat) -> Message,
     ) {
-        let inner = self.inner.lock().await;
-        for seat in [0, 1] {
-            let key = (table_id.clone(), seat);
-            if let Some(tx) = inner.connections.get(&key) {
-                let msg = msg_factory(seat);
-                if tx.send(msg).is_err() {
-                    warn!("failed to broadcast to seat {} at table {}", seat, table_id.as_str());
-                }
+        // Collect senders to broadcast to while holding the lock
+        let senders: Vec<(Seat, ConnectionSender)> = {
+            let inner = self.inner.lock().await;
+            [0, 1]
+                .iter()
+                .filter_map(|&seat| {
+                    let key = (table_id.clone(), seat);
+                    inner.connections.get(&key).map(|tx| (seat, tx.clone()))
+                })
+                .collect()
+        };
+
+        // Send messages without holding the lock
+        let mut broken_seats = Vec::new();
+        for (seat, tx) in senders {
+            let msg = msg_factory(seat);
+            if tx.send(msg).is_err() {
+                broken_seats.push(seat);
+                warn!("failed to broadcast to seat {} at table {}", seat, table_id.as_str());
+            }
+        }
+
+        // Remove broken senders from the map
+        if !broken_seats.is_empty() {
+            let mut inner = self.inner.lock().await;
+            for seat in broken_seats {
+                let key = (table_id.clone(), seat);
+                inner.connections.remove(&key);
             }
         }
     }
