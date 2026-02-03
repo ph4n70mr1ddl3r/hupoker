@@ -85,7 +85,7 @@ impl AuditLog {
                     general_purpose::STANDARD.encode(encrypted),
                 )
             }
-            None => ("".to_string(), general_purpose::STANDARD.encode(seed)),
+            None => ("none".to_string(), general_purpose::STANDARD.encode(seed)),
         };
         let event = AuditEvent::HandStart {
             hand_id,

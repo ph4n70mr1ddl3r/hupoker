@@ -198,8 +198,9 @@ impl Betting {
                 // Total bet after raise must be at least current_high + min_raise
                 let total_bet_after = self.bets[seat as usize] + raise_amount;
                 if total_bet_after < self.current_high + self.min_raise {
-                    // Unless player is all-in (raise_amount == self.stacks[seat as usize])
-                    if raise_amount != self.stacks[seat as usize] {
+                    // Unless player is all-in (raise_amount equals their remaining stack)
+                    let is_all_in = raise_amount == self.stacks[seat as usize];
+                    if !is_all_in {
                         return Err(BettingError::BelowMinRaise);
                     }
                     // All-in raise less than min raise is allowed

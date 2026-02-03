@@ -49,10 +49,8 @@ impl Action {
                 }
             }
             ActionKind::Call | ActionKind::Bet | ActionKind::Raise => {
-                if self.amount.is_none() {
-                    return Err(format!("{:?} must have amount", self.kind));
-                }
-                let amount = self.amount.unwrap();
+                let amount =
+                    self.amount.ok_or_else(|| format!("{:?} must have amount", self.kind))?;
                 if amount == 0 {
                     return Err(format!("{:?} amount must be positive", self.kind));
                 }

@@ -241,8 +241,6 @@ impl Hand {
         for (i, action) in self.actions.iter().enumerate() {
             action.validate().map_err(|e| format!("action {} invalid: {}", i, e))?;
         }
-        // chip conservation: sum of player_stacks + pot.total() must equal initial total (but we don't have initial total)
-        // For now, just ensure player_stacks are non-negative (u64 cannot be negative)
         Ok(())
     }
 }

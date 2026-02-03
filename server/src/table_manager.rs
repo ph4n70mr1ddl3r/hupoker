@@ -107,16 +107,17 @@ impl TableManager {
 
         for table in &self.tables {
             // Only check tables with an active hand
-            let Some(hand) = &table.current_hand else {
-                continue;
+            let hand = match &table.current_hand {
+                Some(h) => h,
+                None => continue,
             };
             // Determine whose turn it is
-            let Some(acting_seat) = hand.betting.acting_seat(hand.button_position) else {
-                continue; // no one to act (hand finished)
+            let acting_seat = match hand.betting.acting_seat(hand.button_position) {
+                Some(seat) => seat,
+                None => continue,
             };
             // Get the timeout duration from table config
-            let timeout_secs = table.config.action_timeout_secs;
-            let timeout = Duration::seconds(timeout_secs as i64);
+            let timeout = Duration::seconds(table.config.action_timeout_secs as i64);
             // Check if last_action_time exists and is older than timeout
             if let Some(last_action_time) = hand.last_action_time {
                 let elapsed = now - last_action_time;

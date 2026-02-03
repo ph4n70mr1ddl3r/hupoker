@@ -44,7 +44,8 @@ impl ConnectionManager {
     /// If the seat is not registered, the message is silently dropped.
     pub async fn send_to_seat(&self, table_id: &TableId, seat: Seat, msg: Message) {
         let inner = self.inner.lock().await;
-        if let Some(tx) = inner.connections.get(&(table_id.clone(), seat)) {
+        let key = (table_id.clone(), seat);
+        if let Some(tx) = inner.connections.get(&key) {
             if tx.send(msg).is_err() {
                 warn!("failed to send message to seat {} at table {}", seat, table_id.as_str());
             }
@@ -62,7 +63,8 @@ impl ConnectionManager {
     ) {
         let inner = self.inner.lock().await;
         for seat in [0, 1] {
-            if let Some(tx) = inner.connections.get(&(table_id.clone(), seat)) {
+            let key = (table_id.clone(), seat);
+            if let Some(tx) = inner.connections.get(&key) {
                 let msg = msg_factory(seat);
                 if tx.send(msg).is_err() {
                     warn!("failed to broadcast to seat {} at table {}", seat, table_id.as_str());

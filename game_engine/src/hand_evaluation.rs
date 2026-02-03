@@ -57,24 +57,14 @@ fn is_straight(cards: &[Card]) -> bool {
     let mut values: Vec<u8> = cards.iter().map(|c| rank_value(c.rank)).collect();
     values.sort();
     values.dedup();
-    // handle ace low straight
+    // handle ace low straight (A-2-3-4-5)
     if values.contains(&14) {
-        let mut low_ace_present = false;
-        for &v in &values {
-            if v == 14 {
-                low_ace_present = true;
-                break;
-            }
-        }
-        if low_ace_present {
-            let mut low_values: Vec<u8> =
-                values.iter().map(|&v| if v == 14 { 1 } else { v }).collect();
-            low_values.sort();
-            low_values.dedup();
-            for window in low_values.windows(5) {
-                if window[4] - window[0] == 4 {
-                    return true;
-                }
+        let mut low_values: Vec<u8> = values.iter().map(|&v| if v == 14 { 1 } else { v }).collect();
+        low_values.sort();
+        low_values.dedup();
+        for window in low_values.windows(5) {
+            if window[4] - window[0] == 4 {
+                return true;
             }
         }
     }
