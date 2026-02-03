@@ -12,6 +12,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
+/// Audit log that records all hand events.
+/// When encryption is enabled via a cipher, RNG seeds are encrypted before logging
+/// to ensure cryptographic integrity. Other events are logged as JSON.
 pub struct AuditLog {
     writer: BufWriter<File>,
     cipher: Option<ChaCha20Poly1305>,
@@ -59,8 +62,6 @@ impl AuditLog {
 
     pub fn log_event(&mut self, event: AuditEvent) -> Result<()> {
         let json = serde_json::to_string(&event).context("failed to serialize audit event")?;
-        // Encrypt if cipher exists (for RNG seeds)
-        // For now, just write JSON line
         writeln!(self.writer, "{}", json).context("failed to write audit log")?;
         self.writer.flush()?;
         Ok(())

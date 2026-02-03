@@ -53,6 +53,37 @@ impl Server {
         awards
     }
 
+    async fn finish_hand(
+        &self,
+        table_id: &game_engine::TableId,
+        hand: &game_engine::Hand,
+        winners: &[game_engine::Seat],
+    ) {
+        if winners.is_empty() {
+            let mut tm = self.table_manager.lock().await;
+            let table = tm.get_table_mut(table_id).expect("table must exist");
+            table.current_hand = None;
+            let table_state =
+                Self::create_table_state_message(table_id, &table.seats, &table.config, None);
+            drop(tm);
+            self.connection_manager.broadcast_to_table(table_id, |_| table_state.clone()).await;
+        } else {
+            let awards = Self::award_pots_to_winners(hand, winners);
+            let mut tm = self.table_manager.lock().await;
+            let table = tm.get_table_mut(table_id).expect("table must exist");
+            for (seat, award) in awards.iter().enumerate() {
+                if let Some(player) = table.seats[seat].as_mut() {
+                    player.stack += award;
+                }
+            }
+            table.current_hand = None;
+            let table_state =
+                Self::create_table_state_message(table_id, &table.seats, &table.config, None);
+            drop(tm);
+            self.connection_manager.broadcast_to_table(table_id, |_| table_state.clone()).await;
+        }
+    }
+
     fn create_table_state_message(
         table_id: &game_engine::TableId,
         seats: &[Option<game_engine::Player>; 2],
@@ -235,34 +266,7 @@ impl Server {
                 error!("failed to log hand end: {}", e);
             }
         }
-        if winners.is_empty() {
-            // Should not happen, but if no winners, just reset hand
-            let mut tm = self.table_manager.lock().await;
-            let table = tm.get_table_mut(&table_id).expect("table must exist");
-            table.current_hand = None;
-            // Broadcast updated TableState (no stack changes)
-            let table_state =
-                Self::create_table_state_message(&table_id, &table.seats, &table.config, None);
-            drop(tm);
-            self.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
-        } else {
-            let awards = Self::award_pots_to_winners(&hand_clone, &winners);
-            // Update player stacks in table seats
-            let mut tm = self.table_manager.lock().await;
-            let table = tm.get_table_mut(&table_id).expect("table must exist");
-            for (seat, award) in awards.iter().enumerate() {
-                if let Some(player) = table.seats[seat].as_mut() {
-                    player.stack += award;
-                }
-            }
-            // Reset current hand
-            table.current_hand = None;
-            // Broadcast updated TableState
-            let table_state =
-                Self::create_table_state_message(&table_id, &table.seats, &table.config, None);
-            drop(tm);
-            self.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
-        }
+        self.finish_hand(&table_id, &hand_clone, &winners).await;
     }
 
     /// Mark a player as disconnected and unregister their connection.
@@ -667,48 +671,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             error!("failed to log hand end: {}", e);
                         }
                     }
-                    if winners.is_empty() {
-                        // Should not happen, but if no winners, just reset hand
-                        let mut tm = server.table_manager.lock().await;
-                        let table = tm.get_table_mut(&table_id).expect("table must exist");
-                        table.current_hand = None;
-                        // Broadcast updated TableState (no stack changes)
-                        let table_state = Server::create_table_state_message(
-                            &table_id,
-                            &table.seats,
-                            &table.config,
-                            None,
-                        );
-                        drop(tm);
-                        server
-                            .connection_manager
-                            .broadcast_to_table(&table_id, |_| table_state.clone())
-                            .await;
-                    } else {
-                        let awards = Server::award_pots_to_winners(&hand_clone, &winners);
-                        // Update player stacks in table seats
-                        let mut tm = server.table_manager.lock().await;
-                        let table = tm.get_table_mut(&table_id).expect("table must exist");
-                        for (seat, award) in awards.iter().enumerate() {
-                            if let Some(player) = table.seats[seat].as_mut() {
-                                player.stack += award;
-                            }
-                        }
-                        // Reset current hand
-                        table.current_hand = None;
-                        // Broadcast updated TableState
-                        let table_state = Server::create_table_state_message(
-                            &table_id,
-                            &table.seats,
-                            &table.config,
-                            None,
-                        );
-                        drop(tm);
-                        server
-                            .connection_manager
-                            .broadcast_to_table(&table_id, |_| table_state.clone())
-                            .await;
-                    }
+                    server.finish_hand(&table_id, &hand_clone, &winners).await;
                 } else if hand_clone.betting.is_round_complete() {
                     // Re-lock table manager to advance street
                     let mut tm = server.table_manager.lock().await;
@@ -767,48 +730,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                     error!("failed to log hand end: {}", e);
                                 }
                             }
-                            if winners.is_empty() {
-                                // Should not happen, but if no winners, just reset hand
-                                let mut tm = server.table_manager.lock().await;
-                                let table = tm.get_table_mut(&table_id).expect("table must exist");
-                                table.current_hand = None;
-                                // Broadcast updated TableState (no stack changes)
-                                let table_state = Server::create_table_state_message(
-                                    &table_id,
-                                    &table.seats,
-                                    &table.config,
-                                    None,
-                                );
-                                drop(tm);
-                                server
-                                    .connection_manager
-                                    .broadcast_to_table(&table_id, |_| table_state.clone())
-                                    .await;
-                            } else {
-                                let awards = Server::award_pots_to_winners(&hand_clone, &winners);
-                                // Update player stacks in table seats
-                                let mut tm = server.table_manager.lock().await;
-                                let table = tm.get_table_mut(&table_id).expect("table must exist");
-                                for (seat, award) in awards.iter().enumerate() {
-                                    if let Some(player) = table.seats[seat].as_mut() {
-                                        player.stack += award;
-                                    }
-                                }
-                                // Reset current hand
-                                table.current_hand = None;
-                                // Broadcast updated TableState
-                                let table_state = Server::create_table_state_message(
-                                    &table_id,
-                                    &table.seats,
-                                    &table.config,
-                                    None,
-                                );
-                                drop(tm);
-                                server
-                                    .connection_manager
-                                    .broadcast_to_table(&table_id, |_| table_state.clone())
-                                    .await;
-                            }
+                            server.finish_hand(&table_id, &hand_clone, &winners).await;
                         }
                     }
                 }

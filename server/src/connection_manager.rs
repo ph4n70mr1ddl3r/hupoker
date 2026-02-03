@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::protocol::messages::Message;
 use game_engine::{Seat, TableId};
@@ -44,7 +45,11 @@ impl ConnectionManager {
     pub async fn send_to_seat(&self, table_id: &TableId, seat: Seat, msg: Message) {
         let inner = self.inner.lock().await;
         if let Some(tx) = inner.connections.get(&(table_id.clone(), seat)) {
-            let _ = tx.send(msg);
+            if tx.send(msg).is_err() {
+                warn!("failed to send message to seat {} at table {}", seat, table_id.as_str());
+            }
+        } else {
+            warn!("no connection for seat {} at table {}", seat, table_id.as_str());
         }
     }
 
@@ -59,7 +64,9 @@ impl ConnectionManager {
         for seat in [0, 1] {
             if let Some(tx) = inner.connections.get(&(table_id.clone(), seat)) {
                 let msg = msg_factory(seat);
-                let _ = tx.send(msg);
+                if tx.send(msg).is_err() {
+                    warn!("failed to broadcast to seat {} at table {}", seat, table_id.as_str());
+                }
             }
         }
     }

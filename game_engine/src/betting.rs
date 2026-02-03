@@ -224,7 +224,7 @@ impl Betting {
     /// Mark that a player has acted this round. If both players have acted and bets are equal,
     /// the betting round is complete.
     fn mark_action(&mut self, seat: Seat) {
-        // Mark this site as acted
+        // Mark this seat as acted
         self.acted_this_round[seat as usize] = true;
         // If both players have acted and bets are equal, round is complete
         if self.acted_this_round[0] && self.acted_this_round[1] && self.bets[0] == self.bets[1] {
