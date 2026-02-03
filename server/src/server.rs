@@ -260,17 +260,7 @@ impl Server {
 
         // Hand ends due to fold; evaluate winner and award pot
         let winners = hand_clone.evaluate_winner();
-        // Log hand end to audit log (already done in manual fold block, but we need to do here)
-        {
-            let pot_total = hand_clone.pot.main
-                + hand_clone.pot.side_pots.iter().map(|p| p.amount).sum::<u64>();
-            let mut audit_log = self.audit_log.lock().await;
-            if let Err(e) =
-                audit_log.log_hand_end(hand_clone.id, &table_id, winners.clone(), pot_total)
-            {
-                error!("failed to log hand end: {}", e);
-            }
-        }
+        self.log_hand_end_to_audit_log(&hand_clone, &table_id, &winners).await;
         self.finish_hand(&table_id, &hand_clone, &winners).await;
     }
 
@@ -293,6 +283,19 @@ impl Server {
         if marked {
             // Unregister from connection manager
             self.connection_manager.unregister(table_id, seat).await;
+        }
+    }
+
+    async fn log_hand_end_to_audit_log(
+        &self,
+        hand: &game_engine::Hand,
+        table_id: &game_engine::TableId,
+        winners: &[game_engine::Seat],
+    ) {
+        let pot_total = hand.pot.main + hand.pot.side_pots.iter().map(|p| p.amount).sum::<u64>();
+        let mut audit_log = self.audit_log.lock().await;
+        if let Err(e) = audit_log.log_hand_end(hand.id, table_id, winners.to_vec(), pot_total) {
+            error!("failed to log hand end: {}", e);
         }
     }
 
@@ -353,12 +356,8 @@ async fn handle_handshake(
     // Step 1: read ClientHello
     let client_hello: Message = read_message(reader).await?;
     debug!("received {:?}", client_hello);
-    let (version, _client_name, _client_version) = match client_hello {
-        Message::ClientHello {
-            version,
-            client_name: _client_name,
-            client_version: _client_version,
-        } => (version, _client_name, _client_version),
+    let version = match client_hello {
+        Message::ClientHello { version, .. } => version,
         _ => {
             warn!("first message not ClientHello");
             return Ok(false);
@@ -615,7 +614,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     break Ok(());
                 }
             }
-            Message::Heartbeat { version: _, timestamp: _ } => {
+            Message::Heartbeat { .. } => {
                 if !handle_heartbeat(&tx, &server, &current_table, current_seat).await {
                     break Ok(());
                 }
@@ -743,20 +742,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 if action.kind == ActionKind::Fold {
                     // Evaluate winner (should be the other player)
                     let winners = hand_clone.evaluate_winner();
-                    // Log hand end to audit log
-                    {
-                        let pot_total = hand_clone.pot.main
-                            + hand_clone.pot.side_pots.iter().map(|p| p.amount).sum::<u64>();
-                        let mut audit_log = server.audit_log.lock().await;
-                        if let Err(e) = audit_log.log_hand_end(
-                            hand_clone.id,
-                            &table_id,
-                            winners.clone(),
-                            pot_total,
-                        ) {
-                            error!("failed to log hand end: {}", e);
-                        }
-                    }
+                    server.log_hand_end_to_audit_log(&hand_clone, &table_id, &winners).await;
                     server.finish_hand(&table_id, &hand_clone, &winners).await;
                 } else if hand_clone.betting.is_round_complete() {
                     // Re-lock table manager to advance street
@@ -798,25 +784,9 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         if hand_clone.current_street == Street::Showdown {
                             // Evaluate winners
                             let winners = hand_clone.evaluate_winner();
-                            // Log hand end to audit log
-                            {
-                                let pot_total = hand_clone.pot.main
-                                    + hand_clone
-                                        .pot
-                                        .side_pots
-                                        .iter()
-                                        .map(|p| p.amount)
-                                        .sum::<u64>();
-                                let mut audit_log = server.audit_log.lock().await;
-                                if let Err(e) = audit_log.log_hand_end(
-                                    hand_clone.id,
-                                    &table_id,
-                                    winners.clone(),
-                                    pot_total,
-                                ) {
-                                    error!("failed to log hand end: {}", e);
-                                }
-                            }
+                            server
+                                .log_hand_end_to_audit_log(&hand_clone, &table_id, &winners)
+                                .await;
                             server.finish_hand(&table_id, &hand_clone, &winners).await;
                         }
                     }

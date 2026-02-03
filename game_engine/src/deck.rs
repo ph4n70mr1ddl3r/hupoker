@@ -15,8 +15,8 @@ impl Deck {
     pub fn new(seed: [u8; 32]) -> Self {
         use super::{Card, Rank, Suit};
         let mut rng = ChaCha12Rng::from_seed(seed);
-        let mut cards: Vec<Card> = Vec::with_capacity(DECK_SIZE);
-        for &rank in &[
+        let suits = [Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades];
+        let ranks = [
             Rank::Two,
             Rank::Three,
             Rank::Four,
@@ -30,11 +30,11 @@ impl Deck {
             Rank::Queen,
             Rank::King,
             Rank::Ace,
-        ] {
-            for &suit in &[Suit::Clubs, Suit::Diamonds, Suit::Hearts, Suit::Spades] {
-                cards.push(Card { rank, suit });
-            }
-        }
+        ];
+        let mut cards: Vec<Card> = ranks
+            .iter()
+            .flat_map(|&rank| suits.iter().map(move |&suit| Card { rank, suit }))
+            .collect();
         // Fisher-Yates shuffle
         for i in (1..cards.len()).rev() {
             let j = rng.gen_range(0..=i);

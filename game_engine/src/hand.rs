@@ -146,7 +146,6 @@ impl Hand {
     }
 
     pub fn apply_action(&mut self, action: Action) -> Result<(), String> {
-        use chrono::Utc;
         // Validate seat
         if !seat_is_valid(action.seat) {
             return Err(format!("invalid seat {}", action.seat));
