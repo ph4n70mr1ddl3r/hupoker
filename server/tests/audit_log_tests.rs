@@ -1,4 +1,3 @@
-use base64::Engine;
 use game_engine::{HandId, TableId};
 use server::audit_log::AuditLog;
 use std::fs;
@@ -9,11 +8,10 @@ fn test_encrypt_decrypt_seed() {
     let key = [0x42u8; 32];
     let seed = [0x99u8; 32];
 
-    // Encrypt using zero nonce (default encrypt_seed)
+    // Encrypt with random nonce (nonce included in encrypted output)
     let encrypted = AuditLog::encrypt_seed(seed, &key).unwrap();
-    // decrypt_seed expects nonce base64 (zero nonce)
-    let zero_nonce = base64::engine::general_purpose::STANDARD.encode([0u8; 12]);
-    let decrypted = AuditLog::decrypt_seed(&encrypted, &zero_nonce, &key).unwrap();
+    // decrypt_seed expects combined nonce:encrypted format
+    let decrypted = AuditLog::decrypt_seed(&encrypted, &key).unwrap();
     assert_eq!(decrypted, seed);
 }
 

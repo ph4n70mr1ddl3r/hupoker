@@ -71,8 +71,8 @@ pub struct Table {
 impl Table {
     pub fn validate(&self) -> Result<(), String> {
         self.config.validate()?;
-        // Validate next_button_position is 0 or 1
-        if self.next_button_position != 0 && self.next_button_position != 1 {
+        // Validate next_button_position
+        if !super::hand::seat_is_valid(self.next_button_position) {
             return Err(format!("invalid next_button_position {}", self.next_button_position));
         }
         // hand_count can be any non-negative integer (u64)
@@ -91,7 +91,13 @@ impl Table {
             if occupied_seats.len() != 2 {
                 return Err("current_hand exists but not both seats occupied".to_string());
             }
-            // TODO: check sitting out status
+            for (i, seat) in self.seats.iter().enumerate() {
+                if let Some(player) = seat {
+                    if player.is_sitting_out {
+                        return Err(format!("seat {} is sitting out but hand is in progress", i));
+                    }
+                }
+            }
         }
         Ok(())
     }

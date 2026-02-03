@@ -17,11 +17,8 @@ pub fn create_hand_state(
     time_remaining_ms: u64,
 ) -> HandState {
     // Determine hole cards for this player
-    let hole_cards = if (0..2).contains(&player_seat) {
-        hand.hole_cards[player_seat as usize].clone()
-    } else {
-        Vec::new()
-    };
+    let hole_cards =
+        if player_seat < 2 { hand.hole_cards[player_seat as usize].clone() } else { Vec::new() };
     // Format last_action_time as ISO 8601 string
     let last_action_time =
         hand.last_action_time.map(|dt| dt.to_rfc3339()).unwrap_or_else(|| Utc::now().to_rfc3339());

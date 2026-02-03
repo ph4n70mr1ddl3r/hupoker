@@ -75,9 +75,9 @@ impl AuditLog {
                 let mut nonce_bytes = [0u8; 12];
                 getrandom(&mut nonce_bytes)
                     .map_err(|e| anyhow::anyhow!("failed to generate nonce: {}", e))?;
-                let nonce = Nonce::from_slice(&nonce_bytes);
+                let nonce_obj = Nonce::from_slice(&nonce_bytes);
                 let encrypted = cipher
-                    .encrypt(nonce, seed.as_ref())
+                    .encrypt(nonce_obj, seed.as_ref())
                     .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
                 (
                     general_purpose::STANDARD.encode(nonce_bytes),
@@ -132,29 +132,33 @@ impl AuditLog {
 
     pub fn encrypt_seed(seed: [u8; 32], key: &[u8; 32]) -> Result<String> {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
-        // Use a zero nonce for simplicity (should be unique per encryption)
-        let nonce = Nonce::from_slice(&[0u8; 12]);
+        let mut nonce_bytes = [0u8; 12];
+        getrandom(&mut nonce_bytes)
+            .map_err(|e| anyhow::anyhow!("failed to generate nonce: {}", e))?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
         let encrypted = cipher
             .encrypt(nonce, seed.as_ref())
             .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
-        Ok(general_purpose::STANDARD.encode(encrypted))
+        let nonce_b64 = general_purpose::STANDARD.encode(nonce_bytes);
+        let encrypted_b64 = general_purpose::STANDARD.encode(encrypted);
+        Ok(format!("{}:{}", nonce_b64, encrypted_b64))
     }
 
-    pub fn decrypt_seed(
-        encrypted_seed_b64: &str,
-        nonce_b64: &str,
-        key: &[u8; 32],
-    ) -> Result<[u8; 32]> {
+    pub fn decrypt_seed(encrypted_with_nonce: &str, key: &[u8; 32]) -> Result<[u8; 32]> {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
+        let parts: Vec<&str> = encrypted_with_nonce.split(':').collect();
+        if parts.len() != 2 {
+            return Err(anyhow::anyhow!("invalid encrypted seed format, expected nonce:encrypted"));
+        }
         let nonce_bytes = general_purpose::STANDARD
-            .decode(nonce_b64)
+            .decode(parts[0])
             .map_err(|e| anyhow::anyhow!("failed to decode nonce: {}", e))?;
         if nonce_bytes.len() != 12 {
             return Err(anyhow::anyhow!("nonce must be 12 bytes"));
         }
         let nonce = Nonce::from_slice(&nonce_bytes);
         let encrypted = general_purpose::STANDARD
-            .decode(encrypted_seed_b64)
+            .decode(parts[1])
             .map_err(|e| anyhow::anyhow!("failed to decode encrypted seed: {}", e))?;
         let seed = cipher
             .decrypt(nonce, encrypted.as_ref())

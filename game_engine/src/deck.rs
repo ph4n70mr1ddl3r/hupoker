@@ -2,24 +2,19 @@ use rand_chacha::ChaCha12Rng;
 use rand_core::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 
+const DECK_SIZE: usize = 52;
+
 /// A shuffled 52‑card deck.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Deck {
     cards: Vec<super::Card>,
-    #[serde(skip, default = "default_rng")]
-    #[allow(dead_code)]
-    rng: ChaCha12Rng, // seeded with secret from OS entropy
-}
-
-fn default_rng() -> ChaCha12Rng {
-    ChaCha12Rng::from_seed([0; 32])
 }
 
 impl Deck {
     pub fn new(seed: [u8; 32]) -> Self {
         use super::{Card, Rank, Suit};
         let mut rng = ChaCha12Rng::from_seed(seed);
-        let mut cards: Vec<Card> = Vec::with_capacity(52);
+        let mut cards: Vec<Card> = Vec::with_capacity(DECK_SIZE);
         for &rank in &[
             Rank::Two,
             Rank::Three,
@@ -44,7 +39,7 @@ impl Deck {
             let j = (rng.next_u32() as usize) % (i + 1);
             cards.swap(i, j);
         }
-        Self { cards, rng }
+        Self { cards }
     }
 
     pub fn draw(&mut self) -> Option<super::Card> {
@@ -56,7 +51,7 @@ impl Deck {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.cards.len() > 52 {
+        if self.cards.len() > DECK_SIZE {
             return Err(format!("deck has too many cards: {}", self.cards.len()));
         }
         Ok(())

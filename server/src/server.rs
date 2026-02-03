@@ -7,6 +7,7 @@ use tokio::time::{interval, Duration};
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
+use crate::protocol::messages::Message;
 use crate::{
     audit_log::AuditLog, connection_manager::ConnectionManager,
     hand_state::create_hand_state_message, table_manager::TableManager,
@@ -22,6 +23,58 @@ pub struct Server {
 }
 
 impl Server {
+    fn award_pots_to_winners(hand: &game_engine::Hand, winners: &[game_engine::Seat]) -> [u64; 2] {
+        let button = hand.button_position;
+        let mut pots = vec![(hand.pot.main, vec![0, 1])];
+        for side_pot in &hand.pot.side_pots {
+            pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
+        }
+        let mut awards = [0u64, 0u64];
+        for (amount, eligible_seats) in pots {
+            let eligible_winners: Vec<_> =
+                winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
+            if eligible_winners.is_empty() {
+                continue;
+            }
+            let share = amount / eligible_winners.len() as u64;
+            let remainder = amount % eligible_winners.len() as u64;
+            for (idx, &seat) in eligible_winners.iter().enumerate() {
+                let mut award = share;
+                if idx == 0 && remainder > 0 {
+                    let mut sorted = eligible_winners.clone();
+                    sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
+                    if seat == sorted[0] {
+                        award += remainder;
+                    }
+                }
+                awards[seat as usize] += award;
+            }
+        }
+        awards
+    }
+
+    fn create_table_state_message(
+        table_id: &game_engine::TableId,
+        seats: &[Option<game_engine::Player>; 2],
+        config: &game_engine::TableConfig,
+        current_hand_id: Option<game_engine::HandId>,
+    ) -> Message {
+        Message::TableState {
+            version: "1.0".to_string(),
+            table_id: table_id.clone(),
+            seats: seats
+                .iter()
+                .enumerate()
+                .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
+                    seat: i as u8,
+                    player: maybe_player.clone(),
+                })
+                .collect(),
+            config: config.clone(),
+            current_hand_id,
+        }
+    }
+
     pub fn new(config: ServerConfig, audit_log: AuditLog) -> Self {
         use game_engine::{Table, TableId};
 
@@ -188,52 +241,12 @@ impl Server {
             let table = tm.get_table_mut(&table_id).expect("table must exist");
             table.current_hand = None;
             // Broadcast updated TableState (no stack changes)
-            let table_clone = table.clone();
+            let table_state =
+                Self::create_table_state_message(&table_id, &table.seats, &table.config, None);
             drop(tm);
-            let table_state = crate::protocol::messages::Message::TableState {
-                version: "1.0".to_string(),
-                table_id: table_id.clone(),
-                seats: table_clone
-                    .seats
-                    .iter()
-                    .enumerate()
-                    .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                        seat: i as u8,
-                        player: maybe_player.clone(),
-                    })
-                    .collect(),
-                config: table_clone.config.clone(),
-                current_hand_id: None,
-            };
             self.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
         } else {
-            // Award pot(s) to winners (same logic as showdown but no side pots expected)
-            let button = hand_clone.button_position;
-            let mut pots = vec![(hand_clone.pot.main, vec![0, 1])]; // main pot eligible for both seats
-            for side_pot in &hand_clone.pot.side_pots {
-                pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
-            }
-            let mut awards = [0u64, 0u64];
-            for (amount, eligible_seats) in pots {
-                let eligible_winners: Vec<_> =
-                    winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
-                if eligible_winners.is_empty() {
-                    continue;
-                }
-                let share = amount / eligible_winners.len() as u64;
-                let remainder = amount % eligible_winners.len() as u64;
-                for (idx, &seat) in eligible_winners.iter().enumerate() {
-                    let mut award = share;
-                    if idx == 0 && remainder > 0 {
-                        let mut sorted = eligible_winners.clone();
-                        sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
-                        if seat == sorted[0] {
-                            award += remainder;
-                        }
-                    }
-                    awards[seat as usize] += award;
-                }
-            }
+            let awards = Self::award_pots_to_winners(&hand_clone, &winners);
             // Update player stacks in table seats
             let mut tm = self.table_manager.lock().await;
             let table = tm.get_table_mut(&table_id).expect("table must exist");
@@ -245,23 +258,9 @@ impl Server {
             // Reset current hand
             table.current_hand = None;
             // Broadcast updated TableState
-            let table_clone = table.clone();
+            let table_state =
+                Self::create_table_state_message(&table_id, &table.seats, &table.config, None);
             drop(tm);
-            let table_state = crate::protocol::messages::Message::TableState {
-                version: "1.0".to_string(),
-                table_id: table_id.clone(),
-                seats: table_clone
-                    .seats
-                    .iter()
-                    .enumerate()
-                    .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                        seat: i as u8,
-                        player: maybe_player.clone(),
-                    })
-                    .collect(),
-                config: table_clone.config.clone(),
-                current_hand_id: None,
-            };
             self.connection_manager.broadcast_to_table(&table_id, |_| table_state.clone()).await;
         }
     }
@@ -425,10 +424,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 let result: Result<_, String> = {
                     let mut tm = server.table_manager.lock().await;
                     // Get starting stack from table config (default to 1500 if table not found)
-                    let starting_stack = tm
-                        .get_table(&table_id)
-                        .map(|t| t.config.starting_stack)
-                        .unwrap_or(1500);
+                    let starting_stack =
+                        tm.get_table(&table_id).map(|t| t.config.starting_stack).unwrap_or(1500);
                     // Create player object
                     let player = Player {
                         seat,
@@ -676,58 +673,19 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         let table = tm.get_table_mut(&table_id).expect("table must exist");
                         table.current_hand = None;
                         // Broadcast updated TableState (no stack changes)
-                        let table_clone = table.clone();
+                        let table_state = Server::create_table_state_message(
+                            &table_id,
+                            &table.seats,
+                            &table.config,
+                            None,
+                        );
                         drop(tm);
-                        let table_state = Message::TableState {
-                            version: "1.0".to_string(),
-                            table_id: table_id.clone(),
-                            seats: table_clone
-                                .seats
-                                .iter()
-                                .enumerate()
-                                .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                    seat: i as u8,
-                                    player: maybe_player.clone(),
-                                })
-                                .collect(),
-                            config: table_clone.config.clone(),
-                            current_hand_id: None,
-                        };
                         server
                             .connection_manager
                             .broadcast_to_table(&table_id, |_| table_state.clone())
                             .await;
                     } else {
-                        // Award pot(s) to winners (same logic as showdown but no side pots expected)
-                        let button = hand_clone.button_position;
-                        let mut pots = vec![(hand_clone.pot.main, vec![0, 1])]; // main pot eligible for both seats
-                        for side_pot in &hand_clone.pot.side_pots {
-                            pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
-                        }
-                        let mut awards = [0u64, 0u64];
-                        for (amount, eligible_seats) in pots {
-                            let eligible_winners: Vec<_> = winners
-                                .iter()
-                                .filter(|&seat| eligible_seats.contains(seat))
-                                .copied()
-                                .collect();
-                            if eligible_winners.is_empty() {
-                                continue;
-                            }
-                            let share = amount / eligible_winners.len() as u64;
-                            let remainder = amount % eligible_winners.len() as u64;
-                            for (idx, &seat) in eligible_winners.iter().enumerate() {
-                                let mut award = share;
-                                if idx == 0 && remainder > 0 {
-                                    let mut sorted = eligible_winners.clone();
-                                    sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
-                                    if seat == sorted[0] {
-                                        award += remainder;
-                                    }
-                                }
-                                awards[seat as usize] += award;
-                            }
-                        }
+                        let awards = Server::award_pots_to_winners(&hand_clone, &winners);
                         // Update player stacks in table seats
                         let mut tm = server.table_manager.lock().await;
                         let table = tm.get_table_mut(&table_id).expect("table must exist");
@@ -739,23 +697,13 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         // Reset current hand
                         table.current_hand = None;
                         // Broadcast updated TableState
-                        let table_clone = table.clone();
+                        let table_state = Server::create_table_state_message(
+                            &table_id,
+                            &table.seats,
+                            &table.config,
+                            None,
+                        );
                         drop(tm);
-                        let table_state = Message::TableState {
-                            version: "1.0".to_string(),
-                            table_id: table_id.clone(),
-                            seats: table_clone
-                                .seats
-                                .iter()
-                                .enumerate()
-                                .map(|(i, maybe_player)| crate::protocol::messages::TableSeat {
-                                    seat: i as u8,
-                                    player: maybe_player.clone(),
-                                })
-                                .collect(),
-                            config: table_clone.config.clone(),
-                            current_hand_id: None,
-                        };
                         server
                             .connection_manager
                             .broadcast_to_table(&table_id, |_| table_state.clone())
@@ -825,68 +773,19 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                 let table = tm.get_table_mut(&table_id).expect("table must exist");
                                 table.current_hand = None;
                                 // Broadcast updated TableState (no stack changes)
-                                let table_clone = table.clone();
+                                let table_state = Server::create_table_state_message(
+                                    &table_id,
+                                    &table.seats,
+                                    &table.config,
+                                    None,
+                                );
                                 drop(tm);
-                                let table_state = Message::TableState {
-                                    version: "1.0".to_string(),
-                                    table_id: table_id.clone(),
-                                    seats: table_clone
-                                        .seats
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, maybe_player)| {
-                                            crate::protocol::messages::TableSeat {
-                                                seat: i as u8,
-                                                player: maybe_player.clone(),
-                                            }
-                                        })
-                                        .collect(),
-                                    config: table_clone.config.clone(),
-                                    current_hand_id: None,
-                                };
                                 server
                                     .connection_manager
                                     .broadcast_to_table(&table_id, |_| table_state.clone())
                                     .await;
                             } else {
-                                // Award pot(s) to winners
-                                let button = hand_clone.button_position;
-                                // Collect pots: main pot first, then side pots
-                                let mut pots = vec![(hand_clone.pot.main, vec![0, 1])]; // main pot eligible for both seats
-                                for side_pot in &hand_clone.pot.side_pots {
-                                    pots.push((side_pot.amount, side_pot.eligible_seats.clone()));
-                                }
-                                // Compute total award per seat
-                                let mut awards = [0u64, 0u64];
-                                for (amount, eligible_seats) in pots {
-                                    // Determine which winners are eligible for this pot
-                                    let eligible_winners: Vec<_> = winners
-                                        .iter()
-                                        .filter(|&seat| eligible_seats.contains(seat))
-                                        .copied()
-                                        .collect();
-                                    if eligible_winners.is_empty() {
-                                        continue; // no eligible winner (should not happen)
-                                    }
-                                    // Split amount equally among eligible winners
-                                    let share = amount / eligible_winners.len() as u64;
-                                    let remainder = amount % eligible_winners.len() as u64;
-                                    for (idx, &seat) in eligible_winners.iter().enumerate() {
-                                        let mut award = share;
-                                        // Distribute remainder to winner closest to button
-                                        if idx == 0 && remainder > 0 {
-                                            // Determine which winner gets remainder: winner closest to button (heads‑up: button first)
-                                            // Sort eligible winners by distance to button (clockwise)
-                                            let mut sorted = eligible_winners.clone();
-                                            sorted
-                                                .sort_by_key(|&s| if s == button { 0 } else { 1 });
-                                            if seat == sorted[0] {
-                                                award += remainder;
-                                            }
-                                        }
-                                        awards[seat as usize] += award;
-                                    }
-                                }
+                                let awards = Server::award_pots_to_winners(&hand_clone, &winners);
                                 // Update player stacks in table seats
                                 let mut tm = server.table_manager.lock().await;
                                 let table = tm.get_table_mut(&table_id).expect("table must exist");
@@ -898,25 +797,13 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                                 // Reset current hand
                                 table.current_hand = None;
                                 // Broadcast updated TableState
-                                let table_clone = table.clone();
+                                let table_state = Server::create_table_state_message(
+                                    &table_id,
+                                    &table.seats,
+                                    &table.config,
+                                    None,
+                                );
                                 drop(tm);
-                                let table_state = Message::TableState {
-                                    version: "1.0".to_string(),
-                                    table_id: table_id.clone(),
-                                    seats: table_clone
-                                        .seats
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, maybe_player)| {
-                                            crate::protocol::messages::TableSeat {
-                                                seat: i as u8,
-                                                player: maybe_player.clone(),
-                                            }
-                                        })
-                                        .collect(),
-                                    config: table_clone.config.clone(),
-                                    current_hand_id: None,
-                                };
                                 server
                                     .connection_manager
                                     .broadcast_to_table(&table_id, |_| table_state.clone())

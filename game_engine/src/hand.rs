@@ -5,10 +5,13 @@ use uuid::Uuid;
 use super::{Action, Card, Pot};
 
 pub type ChipCount = u64;
-pub type Seat = u8; // 0 or 1
+pub type Seat = u8;
+
+const NUM_SEATS: u8 = 2;
+const HOLE_CARDS_PER_SEAT: usize = 2;
 
 pub fn seat_is_valid(seat: Seat) -> bool {
-    seat == 0 || seat == 1
+    seat < NUM_SEATS
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -66,7 +69,7 @@ impl Hand {
         // Deal hole cards (two cards per seat)
         let mut deck = deck;
         let mut hole_cards = [Vec::new(), Vec::new()];
-        for _ in 0..2 {
+        for _ in 0..HOLE_CARDS_PER_SEAT {
             for cards in hole_cards.iter_mut() {
                 if let Some(card) = deck.draw() {
                     cards.push(card);
@@ -168,7 +171,8 @@ impl Hand {
             }
         }
         // Collect active seats
-        let active_seats: Vec<Seat> = (0..2).filter(|&i| !folded[i]).map(|i| i as Seat).collect();
+        let active_seats: Vec<Seat> =
+            (0..NUM_SEATS as usize).filter(|&i| !folded[i]).map(|i| i as Seat).collect();
         if active_seats.is_empty() {
             return Vec::new(); // no active players (should not happen)
         }
@@ -207,8 +211,13 @@ impl Hand {
         }
         // hole_cards must have exactly 2 cards per seat
         for (i, cards) in self.hole_cards.iter().enumerate() {
-            if cards.len() != 2 {
-                return Err(format!("hole_cards[{}] length {} != 2", i, cards.len()));
+            if cards.len() != HOLE_CARDS_PER_SEAT {
+                return Err(format!(
+                    "hole_cards[{}] length {} != {}",
+                    i,
+                    cards.len(),
+                    HOLE_CARDS_PER_SEAT
+                ));
             }
         }
         // community_cards length must match street

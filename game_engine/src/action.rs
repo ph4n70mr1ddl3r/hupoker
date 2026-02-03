@@ -56,7 +56,6 @@ impl Action {
                 if amount == 0 {
                     return Err(format!("{:?} amount must be positive", self.kind));
                 }
-                // TODO: validate amount against minimum raise, stack etc.
             }
         }
         Ok(())
