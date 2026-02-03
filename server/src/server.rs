@@ -259,8 +259,7 @@ impl Server {
             .await;
 
         // Hand ends due to fold; evaluate winner and award pot
-        // Re-lock to get fresh hand state and evaluate winner
-        let (_hand_id, winners) = {
+        let winners = {
             let mut tm = self.table_manager.lock().await;
             let table = match tm.get_table_mut(&table_id) {
                 Some(table) => table,
@@ -270,11 +269,10 @@ impl Server {
                 Some(hand) => hand,
                 None => return,
             };
-            let winners = hand.evaluate_winner();
-            (hand.id, winners)
+            hand.evaluate_winner()
         };
         self.log_hand_end_to_audit_log(&hand_clone, &table_id, &winners).await;
-        // Re-lock again to finish hand with fresh state
+        // Finish hand with fresh state
         {
             let mut tm = self.table_manager.lock().await;
             let table = match tm.get_table_mut(&table_id) {
@@ -350,7 +348,7 @@ impl Server {
     pub async fn run(&self, listener: TcpListener) -> Result<()> {
         let server = self.clone();
         // Start background timeout checker
-        self.clone().start_timeout_checker();
+        server.clone().start_timeout_checker();
         loop {
             let (stream, peer_addr) = listener.accept().await?;
             info!("new connection from {}", peer_addr);
@@ -762,16 +760,19 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
 
                 // Handle fold immediately (hand ends)
                 if action.kind == ActionKind::Fold {
-                    // Re-lock to get fresh hand state and evaluate winner
                     let winners = {
-                        let tm = server.table_manager.lock().await;
-                        tm.get_table(&table_id)
-                            .and_then(|t| t.current_hand.as_ref())
-                            .map(|h| h.evaluate_winner())
-                            .unwrap_or_default()
+                        let mut tm = server.table_manager.lock().await;
+                        let table = match tm.get_table_mut(&table_id) {
+                            Some(table) => table,
+                            None => continue,
+                        };
+                        let hand = match table.current_hand.as_ref() {
+                            Some(hand) => hand,
+                            None => continue,
+                        };
+                        hand.evaluate_winner()
                     };
                     server.log_hand_end_to_audit_log(&hand_clone, &table_id, &winners).await;
-                    // Re-lock again to finish hand with fresh state
                     {
                         let mut tm = server.table_manager.lock().await;
                         let table = match tm.get_table_mut(&table_id) {
@@ -820,18 +821,21 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             .await;
                         // If street is Showdown, evaluate winner and award pot
                         if hand_clone.current_street == Street::Showdown {
-                            // Re-lock to get fresh hand state and evaluate winner
                             let winners = {
-                                let tm = server.table_manager.lock().await;
-                                tm.get_table(&table_id)
-                                    .and_then(|t| t.current_hand.as_ref())
-                                    .map(|h| h.evaluate_winner())
-                                    .unwrap_or_default()
+                                let mut tm = server.table_manager.lock().await;
+                                let table = match tm.get_table_mut(&table_id) {
+                                    Some(table) => table,
+                                    None => continue,
+                                };
+                                let hand = match table.current_hand.as_ref() {
+                                    Some(hand) => hand,
+                                    None => continue,
+                                };
+                                hand.evaluate_winner()
                             };
                             server
                                 .log_hand_end_to_audit_log(&hand_clone, &table_id, &winners)
                                 .await;
-                            // Re-lock again to finish hand with fresh state
                             {
                                 let mut tm = server.table_manager.lock().await;
                                 let table = match tm.get_table_mut(&table_id) {

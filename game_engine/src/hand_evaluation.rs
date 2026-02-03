@@ -82,12 +82,7 @@ fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
         // check royal flush
         let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
         values.sort();
-        if values.contains(&10)
-            && values.contains(&11)
-            && values.contains(&12)
-            && values.contains(&13)
-            && values.contains(&14)
-        {
+        if values == [10, 11, 12, 13, 14] {
             return HandRank::RoyalFlush;
         }
         return HandRank::StraightFlush;
