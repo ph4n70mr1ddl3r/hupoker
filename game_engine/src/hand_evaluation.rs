@@ -16,10 +16,6 @@ pub enum HandRank {
     RoyalFlush,
 }
 
-fn rank_value(rank: Rank) -> u8 {
-    rank.value()
-}
-
 fn is_flush(cards: &[Card]) -> bool {
     if cards.len() < 5 {
         return false;
@@ -40,7 +36,7 @@ fn is_straight(cards: &[Card]) -> bool {
     if cards.len() < 5 {
         return false;
     }
-    let mut values: Vec<u8> = cards.iter().map(|c| rank_value(c.rank)).collect();
+    let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
     values.sort();
     values.dedup();
     // handle ace low straight (A-2-3-4-5)
@@ -69,7 +65,7 @@ fn count_ranks(cards: &[Card]) -> Vec<(Rank, u8)> {
         *map.entry(card.rank).or_insert(0) += 1;
     }
     let mut counts: Vec<_> = map.into_iter().collect();
-    counts.sort_by_key(|&(rank, count)| (count, rank_value(rank)));
+    counts.sort_by_key(|&(rank, count)| (count, rank.value()));
     counts.reverse();
     counts
 }
@@ -84,7 +80,7 @@ fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
 
     if is_flush && is_straight {
         // check royal flush
-        let mut values: Vec<u8> = cards.iter().map(|c| rank_value(c.rank)).collect();
+        let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
         values.sort();
         if values.contains(&10)
             && values.contains(&11)

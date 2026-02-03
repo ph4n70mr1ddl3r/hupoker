@@ -122,9 +122,6 @@ impl Betting {
         if self.round_complete {
             return Err(BettingError::RoundComplete);
         }
-        if !super::hand::seat_is_valid(seat) {
-            return Err(BettingError::OutOfTurn);
-        }
         match kind {
             ActionKind::Fold => {
                 // Fold ends the hand immediately; betting round complete.
@@ -155,10 +152,6 @@ impl Betting {
                 }
                 // Player can call less if all-in (amount < call_amount)
                 let actual_call = amount.min(call_amount);
-                // Explicit check to prevent stack underflow
-                if actual_call > self.stacks[seat as usize] {
-                    return Err(BettingError::InsufficientStack);
-                }
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(actual_call);
                 self.total_pot = self.total_pot.saturating_add(actual_call);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(actual_call);
@@ -211,10 +204,6 @@ impl Betting {
                 }
                 // Update
                 let additional = raise_amount;
-                // Explicit check to prevent stack underflow
-                if additional > self.stacks[seat as usize] {
-                    return Err(BettingError::InsufficientStack);
-                }
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(additional);
                 self.total_pot = self.total_pot.saturating_add(additional);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(additional);
