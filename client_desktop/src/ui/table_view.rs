@@ -7,6 +7,10 @@ use game_engine::{ActionKind, Card, Pot, Street};
 use server::protocol::messages::{HandState as ServerHandState, Message};
 use tokio::runtime::Runtime;
 
+const DEFAULT_STACK_SIZE: u64 = 1500;
+const DEFAULT_BET_AMOUNT: u64 = 100;
+const DEFAULT_RAISE_AMOUNT: u64 = 200;
+
 pub struct TableView {
     pub player_seat: u8,
     #[allow(dead_code)]
@@ -40,7 +44,7 @@ impl TableView {
             hand_id: None,
             community_cards: Vec::new(),
             pot: Pot { main: 0, side_pots: vec![] },
-            player_stacks: [1500, 1500],
+            player_stacks: [DEFAULT_STACK_SIZE, DEFAULT_STACK_SIZE],
             button_position: 0,
             current_street: Street::PreFlop,
             acting_seat: None,
@@ -273,15 +277,15 @@ impl TableView {
             }
             if ui.button("Call").clicked() {
                 // TODO: Calculate actual call amount based on current bets and player stack
-                let _ = self.handle_action(ActionKind::Call, Some(100));
+                let _ = self.handle_action(ActionKind::Call, Some(DEFAULT_BET_AMOUNT));
             }
             if ui.button("Bet").clicked() {
                 // TODO: Implement UI for bet amount selection with minimum bet validation
-                let _ = self.handle_action(ActionKind::Bet, Some(100));
+                let _ = self.handle_action(ActionKind::Bet, Some(DEFAULT_BET_AMOUNT));
             }
             if ui.button("Raise").clicked() {
                 // TODO: Implement UI for raise amount with minimum raise validation
-                let _ = self.handle_action(ActionKind::Raise, Some(200));
+                let _ = self.handle_action(ActionKind::Raise, Some(DEFAULT_RAISE_AMOUNT));
             }
         });
     }

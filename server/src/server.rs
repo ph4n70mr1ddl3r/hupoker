@@ -14,6 +14,9 @@ use crate::{
 };
 use game_engine::{Action, ActionKind, ServerConfig, Street};
 
+const MILLISECONDS_PER_SECOND: u64 = 1000;
+const DEFAULT_STACK_SIZE: u64 = 1500;
+
 #[derive(Clone)]
 pub struct Server {
     config: ServerConfig,
@@ -31,21 +34,20 @@ impl Server {
         }
         let mut awards = [0u64, 0u64];
         for (amount, eligible_seats) in pots {
-            let eligible_winners: Vec<_> =
+            let mut eligible_winners: Vec<_> =
                 winners.iter().filter(|&seat| eligible_seats.contains(seat)).copied().collect();
             if eligible_winners.is_empty() {
                 continue;
             }
             let share = amount / eligible_winners.len() as u64;
             let remainder = amount % eligible_winners.len() as u64;
+            if remainder > 0 {
+                eligible_winners.sort_by_key(|&s| if s == button { 0 } else { 1 });
+            }
             for (idx, &seat) in eligible_winners.iter().enumerate() {
                 let mut award = share;
                 if idx == 0 && remainder > 0 {
-                    let mut sorted = eligible_winners.clone();
-                    sorted.sort_by_key(|&s| if s == button { 0 } else { 1 });
-                    if seat == sorted[0] {
-                        award += remainder;
-                    }
+                    award += remainder;
                 }
                 awards[seat as usize] += award;
             }
@@ -134,39 +136,34 @@ impl Server {
 
     /// Attempt to start a hand at the given table if both seats are occupied and no hand is in progress.
     /// Generates a cryptographically random seed, logs it to the audit log, and creates the hand.
-    /// Returns the HandId if a hand was started, or None otherwise.
+    /// Returns Ok(Some(HandId)) if a hand was started, Ok(None) if conditions not met,
+    /// or Err if an error occurred.
     pub async fn start_hand_if_possible(
         &self,
         table_id: &game_engine::TableId,
-    ) -> Option<game_engine::HandId> {
+    ) -> Result<Option<game_engine::HandId>, anyhow::Error> {
         use getrandom::getrandom;
         // Lock table manager
         let mut tm = self.table_manager.lock().await;
         // Check if both seats occupied and no current hand
         let table = match tm.get_table(table_id) {
             Some(t) => t,
-            None => return None,
+            None => return Ok(None),
         };
         let config = table.config.clone();
         let button_position = table.next_button_position;
         let occupied_seats: Vec<_> = table.seats.iter().filter_map(|s| s.as_ref()).collect();
         if occupied_seats.len() != 2 || table.current_hand.is_some() {
-            return None;
+            return Ok(None);
         }
         // Generate random seed
         let mut seed = [0u8; 32];
-        if let Err(e) = getrandom(&mut seed) {
-            error!("failed to generate random seed: {}", e);
-            return None;
-        }
+        getrandom(&mut seed)
+            .map_err(|e| anyhow::anyhow!("failed to generate random seed: {}", e))?;
         // Start hand
-        let hand_id = match tm.start_hand(table_id, seed) {
-            Ok(hand_id) => hand_id,
-            Err(e) => {
-                error!("failed to start hand: {}", e);
-                return None;
-            }
-        };
+        let hand_id = tm
+            .start_hand(table_id, seed)
+            .map_err(|e| anyhow::anyhow!("failed to start hand: {}", e))?;
         // Log seed to audit log (encrypted)
         {
             let mut audit_log = self.audit_log.lock().await;
@@ -197,7 +194,7 @@ impl Server {
                 )
             })
             .await;
-        Some(hand_id)
+        Ok(Some(hand_id))
     }
 
     pub async fn apply_auto_fold(&self, table_id: game_engine::TableId, seat: game_engine::Seat) {
@@ -240,7 +237,7 @@ impl Server {
 
         // Broadcast updated hand state (fold action applied)
         let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
-        let time_remaining_ms = config.action_timeout_secs * 1000;
+        let time_remaining_ms = config.action_timeout_secs * MILLISECONDS_PER_SECOND;
         self.connection_manager
             .broadcast_to_table(&table_id, |player_seat| {
                 crate::hand_state::create_hand_state_message(
@@ -428,8 +425,10 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 let result: Result<_, String> = {
                     let mut tm = server.table_manager.lock().await;
                     // Get starting stack from table config (default to 1500 if table not found)
-                    let starting_stack =
-                        tm.get_table(&table_id).map(|t| t.config.starting_stack).unwrap_or(1500);
+                    let starting_stack = tm
+                        .get_table(&table_id)
+                        .map(|t| t.config.starting_stack)
+                        .unwrap_or(DEFAULT_STACK_SIZE);
                     // Create player object
                     let player = Player {
                         seat,
@@ -465,7 +464,13 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         current_table = Some(table_id.clone());
                         current_seat = Some(seat);
                         // Attempt to start a hand if both seats are now occupied
-                        let current_hand_id = server.start_hand_if_possible(&table_id).await;
+                        let current_hand_id = match server.start_hand_if_possible(&table_id).await {
+                            Ok(hand_id) => hand_id,
+                            Err(e) => {
+                                error!("failed to start hand: {}", e);
+                                None
+                            }
+                        };
                         let table_state = Message::TableState {
                             version: "1.0".to_string(),
                             table_id: table_id.clone(),
@@ -482,7 +487,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             let tm = server.table_manager.lock().await;
                             if let Some(table) = tm.get_table(&table_id) {
                                 if let Some(hand) = &table.current_hand {
-                                    let time_remaining_ms = table.config.action_timeout_secs * 1000;
+                                    let time_remaining_ms =
+                                        table.config.action_timeout_secs * MILLISECONDS_PER_SECOND;
                                     let acting_seat =
                                         hand.betting.acting_seat(hand.button_position);
                                     Some(create_hand_state_message(
@@ -639,7 +645,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
 
                 // Determine acting seat for next player (or None if round complete)
                 let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
-                let time_remaining_ms = config.action_timeout_secs * 1000;
+                let time_remaining_ms = config.action_timeout_secs * MILLISECONDS_PER_SECOND;
                 server
                     .connection_manager
                     .broadcast_to_table(&table_id, |player_seat| {
@@ -694,7 +700,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         drop(tm);
                         let next_acting_seat =
                             hand_clone.betting.acting_seat(hand_clone.button_position);
-                        let time_remaining_ms = config.action_timeout_secs * 1000;
+                        let time_remaining_ms =
+                            config.action_timeout_secs * MILLISECONDS_PER_SECOND;
                         server
                             .connection_manager
                             .broadcast_to_table(&table_id, |player_seat| {

@@ -1,5 +1,6 @@
+use rand::Rng;
 use rand_chacha::ChaCha12Rng;
-use rand_core::{RngCore, SeedableRng};
+use rand_core::SeedableRng;
 use serde::{Deserialize, Serialize};
 
 const DECK_SIZE: usize = 52;
@@ -34,9 +35,9 @@ impl Deck {
                 cards.push(Card { rank, suit });
             }
         }
-        // Fisher-Yates shuffle using RngCore
+        // Fisher-Yates shuffle
         for i in (1..cards.len()).rev() {
-            let j = (rng.next_u32() as usize) % (i + 1);
+            let j = rng.gen_range(0..=i);
             cards.swap(i, j);
         }
         Self { cards }
