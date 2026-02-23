@@ -98,7 +98,7 @@ impl Betting {
 
     /// Returns the amount a player must call to stay in the hand.
     pub fn amount_to_call(&self, seat: Seat) -> ChipCount {
-        self.current_high - self.bets[seat as usize]
+        self.current_high.saturating_sub(self.bets[seat as usize])
     }
 
     /// Returns true if the betting round is complete (both players have acted and bets are equal).

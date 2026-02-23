@@ -177,21 +177,21 @@ impl Server {
             }
         }
         info!("started hand {:?} at table {}", hand_id, table_id.as_str());
-        // Get the newly created hand
         let tm = self.table_manager.lock().await;
-        let hand = tm
-            .get_table(table_id)
-            .and_then(|t| t.current_hand.as_ref())
-            .expect("hand just started");
-        let hand_clone = hand.clone();
-        drop(tm); // release lock before broadcasting
-                  // Broadcast HandState to both seats
+        let hand = match tm.get_table(table_id).and_then(|t| t.current_hand.as_ref()) {
+            Some(h) => h.clone(),
+            None => {
+                error!("hand disappeared after starting");
+                return Ok(Some(hand_id));
+            }
+        };
+        drop(tm);
         self.connection_manager
             .broadcast_to_table(table_id, |seat| {
-                let acting_seat = button_position; // small blind acts first preflop
-                let time_remaining_ms = config.action_timeout_secs * 1000;
+                let acting_seat = button_position;
+                let time_remaining_ms = config.action_timeout_secs.saturating_mul(1000);
                 create_hand_state_message(
-                    &hand_clone,
+                    &hand,
                     table_id.clone(),
                     seat,
                     Some(acting_seat),
@@ -744,7 +744,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
 
                 // Determine acting seat for next player (or None if round complete)
                 let next_acting_seat = hand_clone.betting.acting_seat();
-                let time_remaining_ms = config.action_timeout_secs * MILLISECONDS_PER_SECOND;
+                let time_remaining_ms =
+                    config.action_timeout_secs.saturating_mul(MILLISECONDS_PER_SECOND);
                 server
                     .connection_manager
                     .broadcast_to_table(&table_id, |player_seat| {

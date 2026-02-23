@@ -92,17 +92,20 @@ fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
         }
         return HandRank::StraightFlush;
     }
+    if counts.is_empty() {
+        return HandRank::HighCard;
+    }
     match counts[0].1 {
         4 => HandRank::FourOfAKind,
         3 => {
-            if counts.len() >= 2 && counts[1].1 >= 2 {
+            if counts.get(1).map(|c| c.1 >= 2).unwrap_or(false) {
                 HandRank::FullHouse
             } else {
                 HandRank::ThreeOfAKind
             }
         }
         2 => {
-            if counts.len() >= 2 && counts[1].1 == 2 {
+            if counts.get(1).map(|c| c.1 == 2).unwrap_or(false) {
                 HandRank::TwoPair
             } else {
                 HandRank::OnePair
@@ -141,13 +144,17 @@ fn evaluate_5card_score(cards: &[Card]) -> HandScore {
         return ((HandRank::StraightFlush as HandScore) << 20) | (high << 16);
     }
 
+    if counts.is_empty() {
+        return (HandRank::HighCard as HandScore) << 20;
+    }
+
     if counts[0].1 == 4 {
         let quad_rank = rank_value(counts[0].0);
-        let kicker = rank_value(counts[1].0);
+        let kicker = counts.get(1).map(|c| rank_value(c.0)).unwrap_or(0);
         return ((HandRank::FourOfAKind as HandScore) << 20) | (quad_rank << 16) | (kicker << 12);
     }
 
-    if counts[0].1 == 3 && counts.len() >= 2 && counts[1].1 >= 2 {
+    if counts[0].1 == 3 && counts.get(1).map(|c| c.1 >= 2).unwrap_or(false) {
         let trips_rank = rank_value(counts[0].0);
         let pair_rank = rank_value(counts[1].0);
         return ((HandRank::FullHouse as HandScore) << 20) | (trips_rank << 16) | (pair_rank << 12);
@@ -167,16 +174,18 @@ fn evaluate_5card_score(cards: &[Card]) -> HandScore {
     if counts[0].1 == 3 {
         let trips_rank = rank_value(counts[0].0);
         let mut kickers = 0u64;
-        for c in &counts[1..] {
-            kickers = (kickers << 4) | rank_value(c.0);
+        if counts.len() > 1 {
+            for c in &counts[1..] {
+                kickers = (kickers << 4) | rank_value(c.0);
+            }
         }
         return ((HandRank::ThreeOfAKind as HandScore) << 20) | (trips_rank << 16) | kickers;
     }
 
-    if counts[0].1 == 2 && counts.len() >= 2 && counts[1].1 == 2 {
+    if counts[0].1 == 2 && counts.get(1).map(|c| c.1 == 2).unwrap_or(false) {
         let high_pair = rank_value(counts[0].0).max(rank_value(counts[1].0));
         let low_pair = rank_value(counts[0].0).min(rank_value(counts[1].0));
-        let kicker = if counts.len() > 2 { rank_value(counts[2].0) } else { 0 };
+        let kicker = counts.get(2).map(|c| rank_value(c.0)).unwrap_or(0);
         return ((HandRank::TwoPair as HandScore) << 20)
             | (high_pair << 16)
             | (low_pair << 12)
@@ -186,8 +195,10 @@ fn evaluate_5card_score(cards: &[Card]) -> HandScore {
     if counts[0].1 == 2 {
         let pair_rank = rank_value(counts[0].0);
         let mut kickers = 0u64;
-        for c in &counts[1..] {
-            kickers = (kickers << 4) | rank_value(c.0);
+        if counts.len() > 1 {
+            for c in &counts[1..] {
+                kickers = (kickers << 4) | rank_value(c.0);
+            }
         }
         return ((HandRank::OnePair as HandScore) << 20) | (pair_rank << 16) | kickers;
     }

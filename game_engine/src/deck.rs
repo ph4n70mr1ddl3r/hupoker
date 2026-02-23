@@ -55,6 +55,11 @@ impl Deck {
         if self.cards.len() > DECK_SIZE {
             return Err(format!("deck has too many cards: {}", self.cards.len()));
         }
+        use std::collections::HashSet;
+        let unique_count = self.cards.iter().collect::<HashSet<_>>().len();
+        if unique_count != self.cards.len() {
+            return Err("deck contains duplicate cards".to_string());
+        }
         Ok(())
     }
 }
