@@ -3,7 +3,10 @@ use game_engine::{ActionKind, HandId};
 use server::protocol::messages::Message;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
+use tokio::time::{timeout, Duration};
 use tracing::debug;
+
+const READ_TIMEOUT_SECS: u64 = 30;
 
 pub struct Connection {
     reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
@@ -30,7 +33,10 @@ impl Connection {
 
     pub async fn receive_message(&mut self) -> Result<Message> {
         let mut line = String::new();
-        self.reader.read_line(&mut line).await.context("failed to read line")?;
+        timeout(Duration::from_secs(READ_TIMEOUT_SECS), self.reader.read_line(&mut line))
+            .await
+            .context("read timeout")?
+            .context("failed to read line")?;
         debug!("received: {}", line.trim());
         let msg: Message = serde_json::from_str(&line).context("failed to parse JSON")?;
         Ok(msg)

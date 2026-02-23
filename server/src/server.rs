@@ -164,13 +164,16 @@ impl Server {
             .start_hand(table_id, seed)
             .map_err(|e| anyhow::anyhow!("failed to start hand: {}", e))?;
         drop(tm);
-        // Log seed to audit log (encrypted)
+        // Log seed to audit log (encrypted) - critical for game verifiability
         {
             let mut audit_log = self.audit_log.lock().await;
-            if let Err(e) = audit_log.log_seed(hand_id, table_id, &seed) {
-                error!("failed to log seed: {}", e);
-                // Continue anyway
-            }
+            audit_log.log_seed(hand_id, table_id, &seed).map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to log seed for hand {}: {}. Aborting hand start.",
+                    hand_id,
+                    e
+                )
+            })?;
         }
         info!("started hand {:?} at table {}", hand_id, table_id.as_str());
         let tm = self.table_manager.lock().await;
@@ -309,7 +312,8 @@ impl Server {
         table_id: &game_engine::TableId,
         winners: &[game_engine::Seat],
     ) {
-        let pot_total = hand.pot.main + hand.pot.side_pots.iter().map(|p| p.amount).sum::<u64>();
+        let pot_total =
+            hand.pot.main.saturating_add(hand.pot.side_pots.iter().map(|p| p.amount).sum::<u64>());
         let mut audit_log = self.audit_log.lock().await;
         if let Err(e) = audit_log.log_hand_end(hand.id, table_id, winners.to_vec(), pot_total) {
             error!("failed to log hand end: {}", e);
@@ -583,7 +587,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
         return Ok(());
     }
 
-    // Create channel for outgoing messages and spawn writer task
+    // Create channel for outgoing messages
+    // Note: Using unbounded channel for simplicity; bounded would require async send throughout
     let (tx, mut rx) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {

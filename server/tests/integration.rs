@@ -27,7 +27,9 @@ async fn client_hello_server_hello() -> Result<()> {
         encryption_key_env_var: "HUPOKER_ENCRYPTION_KEY".to_string(),
     };
     // Create audit log (no encryption)
-    let audit_log = AuditLog::new(&config.audit_log_path, None)?;
+    // Use a test encryption key for audit log (required for hand start)
+    let test_encryption_key: [u8; 32] = [42u8; 32];
+    let audit_log = AuditLog::new(&config.audit_log_path, Some(test_encryption_key))?;
     let server = Server::new(config, audit_log);
     let server_listener = server.bind().await?;
     // Spawn server task
@@ -88,7 +90,9 @@ async fn join_table_success() -> Result<()> {
         audit_log_path: PathBuf::from("test-audit2.log"),
         encryption_key_env_var: "HUPOKER_ENCRYPTION_KEY".to_string(),
     };
-    let audit_log = AuditLog::new(&config.audit_log_path, None)?;
+    // Use a test encryption key for audit log (required for hand start)
+    let test_encryption_key: [u8; 32] = [42u8; 32];
+    let audit_log = AuditLog::new(&config.audit_log_path, Some(test_encryption_key))?;
     let server = Server::new(config, audit_log);
     let server_listener = server.bind().await?;
     let server_handle = tokio::spawn(async move {
@@ -166,7 +170,9 @@ async fn reconnection_flow() -> Result<()> {
         audit_log_path: PathBuf::from("test-audit-reconn.log"),
         encryption_key_env_var: "HUPOKER_ENCRYPTION_KEY".to_string(),
     };
-    let audit_log = AuditLog::new(&config.audit_log_path, None)?;
+    // Use a test encryption key for audit log (required for hand start)
+    let test_encryption_key: [u8; 32] = [42u8; 32];
+    let audit_log = AuditLog::new(&config.audit_log_path, Some(test_encryption_key))?;
     let server = Server::new(config, audit_log);
     let server_listener = server.bind().await?;
     let server_handle = tokio::spawn(async move {
@@ -419,7 +425,9 @@ async fn action_timeout_auto_fold() -> Result<()> {
         audit_log_path: std::path::PathBuf::from("test-audit-timeout.log"),
         encryption_key_env_var: "HUPOKER_ENCRYPTION_KEY".to_string(),
     };
-    let audit_log = AuditLog::new(&config.audit_log_path, None)?;
+    // Use a test encryption key for audit log (required for hand start)
+    let test_encryption_key: [u8; 32] = [42u8; 32];
+    let audit_log = AuditLog::new(&config.audit_log_path, Some(test_encryption_key))?;
     let server = Server::new(config, audit_log);
     let server_listener = server.bind().await?;
     let server_handle = tokio::spawn(async move {
