@@ -2,6 +2,17 @@ use super::Card;
 use super::Rank;
 use super::Suit;
 
+const HAND_SIZE: usize = 5;
+const STRAIGHT_FLUSH_HIGH_SHIFT: u32 = 20;
+const MAIN_RANK_SHIFT: u32 = 16;
+const SECONDARY_RANK_SHIFT: u32 = 12;
+const KICKER_SHIFT: u32 = 8;
+const CARD_VALUE_SHIFT: u32 = 4;
+const ACE_LOW_VALUE: u8 = 1;
+const ACE_VALUE: u8 = 14;
+const FIVE_VALUE: u8 = 5;
+const TEN_VALUE: u8 = 10;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HandRank {
     HighCard = 0,
@@ -23,7 +34,7 @@ fn rank_value(rank: Rank) -> u64 {
 }
 
 fn is_flush(cards: &[Card]) -> bool {
-    if cards.len() < 5 {
+    if cards.len() < HAND_SIZE {
         return false;
     }
     let mut suit_counts = [0u8; 4];
@@ -35,29 +46,29 @@ fn is_flush(cards: &[Card]) -> bool {
             Suit::Spades => suit_counts[3] += 1,
         }
     }
-    suit_counts.iter().any(|&c| c >= 5)
+    suit_counts.iter().any(|&c| c >= HAND_SIZE as u8)
 }
 
 fn is_straight(cards: &[Card]) -> bool {
-    if cards.len() < 5 {
+    if cards.len() < HAND_SIZE {
         return false;
     }
     let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
     values.sort_unstable();
     values.dedup();
-    // handle ace low straight (A-2-3-4-5)
-    if values.contains(&14) {
-        let mut low_values: Vec<u8> = values.iter().map(|&v| if v == 14 { 1 } else { v }).collect();
+    if values.contains(&ACE_VALUE) {
+        let mut low_values: Vec<u8> =
+            values.iter().map(|&v| if v == ACE_VALUE { ACE_LOW_VALUE } else { v }).collect();
         low_values.sort_unstable();
         low_values.dedup();
-        for window in low_values.windows(5) {
-            if window[4] - window[0] == 4 {
+        for window in low_values.windows(HAND_SIZE) {
+            if window[HAND_SIZE - 1] - window[0] == 4 {
                 return true;
             }
         }
     }
-    for window in values.windows(5) {
-        if window[4] - window[0] == 4 {
+    for window in values.windows(HAND_SIZE) {
+        if window[HAND_SIZE - 1] - window[0] == 4 {
             return true;
         }
     }
@@ -77,7 +88,7 @@ fn count_ranks(cards: &[Card]) -> Vec<(Rank, u8)> {
 }
 
 fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
-    if cards.len() != 5 {
+    if cards.len() != HAND_SIZE {
         return HandRank::HighCard;
     }
     let counts = count_ranks(cards);
@@ -87,7 +98,7 @@ fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
     if is_flush && is_straight {
         let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
         values.sort_unstable();
-        if values == [10, 11, 12, 13, 14] {
+        if values == [TEN_VALUE, 11, 12, 13, ACE_VALUE] {
             return HandRank::RoyalFlush;
         }
         return HandRank::StraightFlush;
@@ -124,7 +135,7 @@ fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
 }
 
 fn evaluate_5card_score(cards: &[Card]) -> HandScore {
-    if cards.len() != 5 {
+    if cards.len() != HAND_SIZE {
         return 0;
     }
     let counts = count_ranks(cards);
@@ -136,39 +147,51 @@ fn evaluate_5card_score(cards: &[Card]) -> HandScore {
     let values_iter = values.iter();
 
     if is_flush && is_straight_val {
-        if values == [14, 13, 12, 11, 10] {
-            return (HandRank::RoyalFlush as HandScore) << 20;
+        if values == [ACE_VALUE, 13, 12, 11, TEN_VALUE] {
+            return (HandRank::RoyalFlush as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT;
         }
-        let high =
-            if values.contains(&14) && values.contains(&5) { 5u64 } else { values[0] as u64 };
-        return ((HandRank::StraightFlush as HandScore) << 20) | (high << 16);
+        let high = if values.contains(&ACE_VALUE) && values.contains(&FIVE_VALUE) {
+            FIVE_VALUE as u64
+        } else {
+            values[0] as u64
+        };
+        return ((HandRank::StraightFlush as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (high << MAIN_RANK_SHIFT);
     }
 
     if counts.is_empty() {
-        return (HandRank::HighCard as HandScore) << 20;
+        return (HandRank::HighCard as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT;
     }
 
     if counts[0].1 == 4 {
         let quad_rank = rank_value(counts[0].0);
         let kicker = counts.get(1).map(|c| rank_value(c.0)).unwrap_or(0);
-        return ((HandRank::FourOfAKind as HandScore) << 20) | (quad_rank << 16) | (kicker << 12);
+        return ((HandRank::FourOfAKind as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (quad_rank << MAIN_RANK_SHIFT)
+            | (kicker << SECONDARY_RANK_SHIFT);
     }
 
     if counts[0].1 == 3 && counts.get(1).map(|c| c.1 >= 2).unwrap_or(false) {
         let trips_rank = rank_value(counts[0].0);
         let pair_rank = rank_value(counts[1].0);
-        return ((HandRank::FullHouse as HandScore) << 20) | (trips_rank << 16) | (pair_rank << 12);
+        return ((HandRank::FullHouse as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (trips_rank << MAIN_RANK_SHIFT)
+            | (pair_rank << SECONDARY_RANK_SHIFT);
     }
 
     if is_flush {
-        let score = values_iter.fold(0u64, |acc, &v| (acc << 4) | (v as u64));
-        return ((HandRank::Flush as HandScore) << 20) | score;
+        let score = values_iter.fold(0u64, |acc, &v| (acc << CARD_VALUE_SHIFT) | (v as u64));
+        return ((HandRank::Flush as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT) | score;
     }
 
     if is_straight_val {
-        let high =
-            if values.contains(&14) && values.contains(&5) { 5u64 } else { values[0] as u64 };
-        return ((HandRank::Straight as HandScore) << 20) | (high << 16);
+        let high = if values.contains(&ACE_VALUE) && values.contains(&FIVE_VALUE) {
+            FIVE_VALUE as u64
+        } else {
+            values[0] as u64
+        };
+        return ((HandRank::Straight as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (high << MAIN_RANK_SHIFT);
     }
 
     if counts[0].1 == 3 {
@@ -176,20 +199,22 @@ fn evaluate_5card_score(cards: &[Card]) -> HandScore {
         let mut kickers = 0u64;
         if counts.len() > 1 {
             for c in &counts[1..] {
-                kickers = (kickers << 4) | rank_value(c.0);
+                kickers = (kickers << CARD_VALUE_SHIFT) | rank_value(c.0);
             }
         }
-        return ((HandRank::ThreeOfAKind as HandScore) << 20) | (trips_rank << 16) | kickers;
+        return ((HandRank::ThreeOfAKind as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (trips_rank << MAIN_RANK_SHIFT)
+            | kickers;
     }
 
     if counts[0].1 == 2 && counts.get(1).map(|c| c.1 == 2).unwrap_or(false) {
         let high_pair = rank_value(counts[0].0).max(rank_value(counts[1].0));
         let low_pair = rank_value(counts[0].0).min(rank_value(counts[1].0));
         let kicker = counts.get(2).map(|c| rank_value(c.0)).unwrap_or(0);
-        return ((HandRank::TwoPair as HandScore) << 20)
-            | (high_pair << 16)
-            | (low_pair << 12)
-            | (kicker << 8);
+        return ((HandRank::TwoPair as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (high_pair << MAIN_RANK_SHIFT)
+            | (low_pair << SECONDARY_RANK_SHIFT)
+            | (kicker << KICKER_SHIFT);
     }
 
     if counts[0].1 == 2 {
@@ -197,18 +222,20 @@ fn evaluate_5card_score(cards: &[Card]) -> HandScore {
         let mut kickers = 0u64;
         if counts.len() > 1 {
             for c in &counts[1..] {
-                kickers = (kickers << 4) | rank_value(c.0);
+                kickers = (kickers << CARD_VALUE_SHIFT) | rank_value(c.0);
             }
         }
-        return ((HandRank::OnePair as HandScore) << 20) | (pair_rank << 16) | kickers;
+        return ((HandRank::OnePair as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT)
+            | (pair_rank << MAIN_RANK_SHIFT)
+            | kickers;
     }
 
-    let score = values_iter.fold(0u64, |acc, &v| (acc << 4) | (v as u64));
-    ((HandRank::HighCard as HandScore) << 20) | score
+    let score = values_iter.fold(0u64, |acc, &v| (acc << CARD_VALUE_SHIFT) | (v as u64));
+    ((HandRank::HighCard as HandScore) << STRAIGHT_FLUSH_HIGH_SHIFT) | score
 }
 
 pub fn evaluate_hand(cards: &[Card]) -> HandRank {
-    if cards.len() < 5 {
+    if cards.len() < HAND_SIZE {
         return HandRank::HighCard;
     }
     let n = cards.len();
@@ -232,7 +259,7 @@ pub fn evaluate_hand(cards: &[Card]) -> HandRank {
 }
 
 pub fn evaluate_hand_score(cards: &[Card]) -> HandScore {
-    if cards.len() < 5 {
+    if cards.len() < HAND_SIZE {
         return 0;
     }
     let n = cards.len();
@@ -256,7 +283,7 @@ pub fn evaluate_hand_score(cards: &[Card]) -> HandScore {
 }
 
 pub fn score_to_rank(score: HandScore) -> HandRank {
-    match (score >> 20) as u8 {
+    match (score >> STRAIGHT_FLUSH_HIGH_SHIFT) as u8 {
         0 => HandRank::HighCard,
         1 => HandRank::OnePair,
         2 => HandRank::TwoPair,

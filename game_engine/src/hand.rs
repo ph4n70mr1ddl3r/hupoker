@@ -4,11 +4,13 @@ use uuid::Uuid;
 
 use super::{Action, Card, ChipCount, Pot};
 
+/// Seat index at a heads-up poker table (0 or 1).
 pub type Seat = u8;
 
 const NUM_SEATS: u8 = 2;
 const HOLE_CARDS_PER_SEAT: usize = 2;
 
+/// Returns true if the seat index is valid for a heads-up table (0 or 1).
 pub fn seat_is_valid(seat: Seat) -> bool {
     seat < NUM_SEATS
 }

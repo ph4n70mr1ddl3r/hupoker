@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::{ChipCount, Seat};
 
 /// Pot(s) in the current hand.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Pot {
     pub main: ChipCount,
     pub side_pots: Vec<SidePot>, // only if all‑in situations

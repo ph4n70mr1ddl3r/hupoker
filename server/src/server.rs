@@ -1,12 +1,4 @@
-use anyhow::Result;
-use chrono::Utc;
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::time::{interval, Duration};
-
-use tokio::sync::Mutex;
-use tracing::{error, info, warn};
-
+use crate::constants::{MILLISECONDS_PER_SECOND, NUM_SEATS, PROTOCOL_VERSION};
 use crate::protocol::messages::Message;
 use crate::{
     audit_log::AuditLog,
@@ -14,12 +6,16 @@ use crate::{
     hand_state::create_hand_state_message,
     table_manager::TableManager,
 };
+use anyhow::Result;
+use chrono::Utc;
 use game_engine::{Action, ActionKind, ServerConfig, Street};
+use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
+use tokio::time::{interval, Duration};
+use tracing::{error, info, warn};
 
-const MILLISECONDS_PER_SECOND: u64 = 1000;
 const DEFAULT_STACK_SIZE: u64 = 1500;
-const PROTOCOL_VERSION: &str = "1.0";
-const NUM_SEATS: u8 = 2;
 
 #[derive(Clone)]
 pub struct Server {

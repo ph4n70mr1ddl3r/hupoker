@@ -168,22 +168,23 @@ impl ConnectionDialog {
         let now = Instant::now();
         if let Some(last) = self.last_reconnect_attempt {
             if now.duration_since(last).as_secs() < RECONNECT_DELAY_SECS {
-                return; // Wait longer
+                return;
             }
         }
         self.last_reconnect_attempt = Some(now);
         self.reconnect_attempts += 1;
 
         let address = self.server_address.clone();
-        let table_id = self.reconnect_table_id.clone();
-        let seat = self.reconnect_seat;
-        if table_id.is_none() || seat.is_none() {
-            self.error_message = Some("Cannot reconnect: missing table or seat".to_string());
+        let Some(table_id) = self.reconnect_table_id.clone() else {
+            self.error_message = Some("Cannot reconnect: missing table".to_string());
             self.connection_status = ConnectionStatus::Disconnected;
             return;
-        }
-        let table_id = table_id.unwrap();
-        let seat = seat.unwrap();
+        };
+        let Some(seat) = self.reconnect_seat else {
+            self.error_message = Some("Cannot reconnect: missing seat".to_string());
+            self.connection_status = ConnectionStatus::Disconnected;
+            return;
+        };
 
         let rt = self.runtime.get_or_insert_with(|| {
             Arc::new(Runtime::new().expect("failed to create tokio runtime"))
