@@ -1,25 +1,26 @@
 use chrono::{Duration, Utc};
 use game_engine::{HandId, Player, Seat, Table, TableId};
+use std::collections::HashMap;
 
 pub struct TableManager {
-    tables: Vec<Table>,
+    tables: HashMap<TableId, Table>,
 }
 
 impl TableManager {
     pub fn new() -> Self {
-        Self { tables: Vec::new() }
+        Self { tables: HashMap::new() }
     }
 
     pub fn add_table(&mut self, table: Table) {
-        self.tables.push(table);
+        self.tables.insert(table.id.clone(), table);
     }
 
     pub fn get_table(&self, id: &TableId) -> Option<&Table> {
-        self.tables.iter().find(|t| &t.id == id)
+        self.tables.get(id)
     }
 
     pub fn get_table_mut(&mut self, id: &TableId) -> Option<&mut Table> {
-        self.tables.iter_mut().find(|t| &t.id == id)
+        self.tables.get_mut(id)
     }
 
     /// Attempts to occupy a seat at a table.
@@ -104,7 +105,7 @@ impl TableManager {
         let mut timed_out = Vec::new();
         let now = Utc::now();
 
-        for table in &self.tables {
+        for table in self.tables.values() {
             // Only check tables with an active hand
             let hand = match &table.current_hand {
                 Some(h) => h,

@@ -1,8 +1,7 @@
 use crate::connection::Connection;
 use anyhow::Result;
-#[allow(clippy::single_component_path_imports)]
-use game_engine;
 use server::protocol::messages::{HandState, TableState};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::runtime::Runtime;
 
@@ -19,6 +18,7 @@ pub struct ConnectionDialog {
     pub reconnect_seat: Option<u8>,
     pub reconnect_attempts: u32,
     pub last_reconnect_attempt: Option<Instant>,
+    pub runtime: Option<Arc<Runtime>>,
 }
 
 #[derive(Default, PartialEq)]
@@ -104,7 +104,10 @@ impl ConnectionDialog {
         self.hand_state = None;
 
         let address = self.server_address.clone();
-        let rt = Runtime::new().expect("failed to create tokio runtime");
+        let rt = self.runtime.get_or_insert_with(|| {
+            Arc::new(Runtime::new().expect("failed to create tokio runtime"))
+        });
+        let rt = Arc::clone(rt);
         let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
             rt.block_on(async {
                 // Connect TCP
@@ -182,7 +185,10 @@ impl ConnectionDialog {
         let table_id = table_id.unwrap();
         let seat = seat.unwrap();
 
-        let rt = Runtime::new().expect("failed to create tokio runtime");
+        let rt = self.runtime.get_or_insert_with(|| {
+            Arc::new(Runtime::new().expect("failed to create tokio runtime"))
+        });
+        let rt = Arc::clone(rt);
         let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
             rt.block_on(async {
                 let mut conn = Connection::connect(&address).await?;

@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use egui::{Color32, Pos2, Rect, Stroke, Ui};
 use game_engine::{ActionKind, Card, Pot, Street};
 use server::protocol::messages::{HandState as ServerHandState, Message};
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 const DEFAULT_STACK_SIZE: u64 = 1500;
@@ -13,7 +14,6 @@ const DEFAULT_RAISE_AMOUNT: u64 = 200;
 
 pub struct TableView {
     pub player_seat: u8,
-    #[allow(dead_code)]
     pub table_id: game_engine::TableId,
     pub hand_id: Option<game_engine::HandId>,
     pub community_cards: Vec<Card>,
@@ -22,14 +22,14 @@ pub struct TableView {
     pub button_position: u8,
     pub current_street: Street,
     pub acting_seat: Option<u8>,
-    pub hole_cards: Vec<Card>, // for the current player
+    pub hole_cards: Vec<Card>,
     pub connection: Option<Connection>,
     pub error_message: Option<String>,
     pub time_remaining_ms: Option<u64>,
     pub time_remaining_received: Option<f64>,
     pub last_sent_action: Option<ActionKind>,
     pub notification: Option<String>,
-    runtime: Option<Runtime>,
+    runtime: Arc<Runtime>,
 }
 
 impl TableView {
@@ -37,6 +37,7 @@ impl TableView {
         player_seat: u8,
         table_id: game_engine::TableId,
         connection: Option<Connection>,
+        runtime: Arc<Runtime>,
     ) -> Self {
         Self {
             player_seat,
@@ -55,7 +56,7 @@ impl TableView {
             time_remaining_received: None,
             last_sent_action: None,
             notification: None,
-            runtime: Runtime::new().ok(),
+            runtime,
         }
     }
 
@@ -116,10 +117,9 @@ impl TableView {
     ) -> Result<(), anyhow::Error> {
         let hand_id = self.hand_id.ok_or_else(|| anyhow!("no active hand"))?;
         let conn = self.connection.as_mut().ok_or_else(|| anyhow!("no connection"))?;
-        let rt = self.runtime.as_mut().ok_or_else(|| anyhow!("tokio runtime not available"))?;
         self.error_message = None;
         self.last_sent_action = Some(kind);
-        let response = rt.block_on(async {
+        let response = self.runtime.block_on(async {
             conn.send_action(hand_id, kind, amount).await?;
             conn.receive_message().await
         })?;
@@ -168,7 +168,10 @@ impl TableView {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.heading("Poker Table");
+        ui.horizontal(|ui| {
+            ui.heading("Poker Table");
+            ui.label(format!("({})", self.table_id.as_str()));
+        });
         ui.separator();
 
         // Draw table background (circle or rectangle)
