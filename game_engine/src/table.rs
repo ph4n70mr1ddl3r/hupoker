@@ -1,9 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{Hand, HandId, Player, Seat};
-
-pub type ChipCount = u64;
+use super::{ChipCount, Hand, HandId, Player, Seat};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableId(String); // e.g., "table-1"

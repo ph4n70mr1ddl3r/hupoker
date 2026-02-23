@@ -2,9 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Action, Card, Pot};
+use super::{Action, Card, ChipCount, Pot};
 
-pub type ChipCount = u64;
 pub type Seat = u8;
 
 const NUM_SEATS: u8 = 2;

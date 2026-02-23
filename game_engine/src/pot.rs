@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::Seat;
-
-pub type ChipCount = u64;
+use super::{ChipCount, Seat};
 
 /// Pot(s) in the current hand.
 #[derive(Debug, Clone, Serialize, Deserialize)]

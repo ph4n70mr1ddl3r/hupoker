@@ -10,26 +10,28 @@ pub struct Betting {
     min_raise: ChipCount,
     // total chips in the pot (sum of all bets from all streets)
     total_pot: ChipCount,
-    // whether the betting round is complete (both players acted and bets are equal)
+    // whether the betting round is complete (both players acted and bets are equal, or all-in situation)
     round_complete: bool,
     // player stacks (remaining chips) - needed to validate all-in
     stacks: [ChipCount; 2],
     // which seats have acted in the current betting round
     acted_this_round: [bool; 2],
+    // which seats are all-in
+    all_in: [bool; 2],
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum BettingError {
-    #[error("invalid bet amount")]
+    #[error("invalid bet amount: amount must be provided for bet/raise/call actions")]
     InvalidAmount,
-    #[error("insufficient stack")]
-    InsufficientStack,
-    #[error("bet below minimum raise")]
-    BelowMinRaise,
-    #[error("action out of turn")]
-    OutOfTurn,
-    #[error("illegal action")]
-    IllegalAction,
+    #[error("insufficient stack: player has {0} chips but needs {1}")]
+    InsufficientStack(ChipCount, ChipCount),
+    #[error("bet below minimum raise: total bet must be at least {0}, got {1}")]
+    BelowMinRaise(ChipCount, ChipCount),
+    #[error("action out of turn: it is seat {0}'s turn to act")]
+    OutOfTurn(Seat),
+    #[error("illegal action: {0}")]
+    IllegalAction(String),
     #[error("betting round already complete")]
     RoundComplete,
 }
@@ -66,6 +68,7 @@ impl Betting {
             round_complete: false,
             stacks: new_stacks,
             acted_this_round: [false, false],
+            all_in: [false, false],
         }
     }
 
@@ -81,6 +84,7 @@ impl Betting {
             round_complete: false,
             stacks,
             acted_this_round: [false, false],
+            all_in: [false, false],
         }
     }
 
@@ -131,8 +135,12 @@ impl Betting {
             }
             ActionKind::Check => {
                 // Check only allowed if amount_to_call == 0
-                if self.amount_to_call(seat) != 0 {
-                    return Err(BettingError::IllegalAction);
+                let amount_to_call = self.amount_to_call(seat);
+                if amount_to_call != 0 {
+                    return Err(BettingError::IllegalAction(format!(
+                        "cannot check: must call {} chips",
+                        amount_to_call
+                    )));
                 }
                 // Mark that player has acted; need to check if both players acted and bets equal.
                 self.mark_action(seat);
@@ -148,36 +156,53 @@ impl Betting {
                 // Validate amount matches call_amount (or all-in)
                 let amount = amount.ok_or(BettingError::InvalidAmount)?;
                 if amount > self.stacks[seat as usize] {
-                    return Err(BettingError::InsufficientStack);
+                    return Err(BettingError::InsufficientStack(
+                        self.stacks[seat as usize],
+                        amount,
+                    ));
                 }
                 // Player can call less if all-in (amount < call_amount)
                 let actual_call = amount.min(call_amount);
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(actual_call);
                 self.total_pot = self.total_pot.saturating_add(actual_call);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(actual_call);
-                // If player went all-in and amount < call_amount, side pot logic later.
-                // For now, treat as call.
+                // Mark as all-in if stack is now zero
+                if self.stacks[seat as usize] == 0 {
+                    self.all_in[seat as usize] = true;
+                }
+                // If player went all-in and amount < call_amount, they can't do more
+                // The betting round may still continue if the other player can raise
                 self.mark_action(seat);
                 Ok(())
             }
             ActionKind::Bet => {
                 // Bet only allowed if current_high == 0 (no previous bet this round)
                 if self.current_high != 0 {
-                    return Err(BettingError::IllegalAction);
+                    return Err(BettingError::IllegalAction(
+                        "cannot bet: there is already a bet in this round, use raise instead"
+                            .to_string(),
+                    ));
                 }
                 let bet_amount = amount.ok_or(BettingError::InvalidAmount)?;
                 if bet_amount > self.stacks[seat as usize] {
-                    return Err(BettingError::InsufficientStack);
+                    return Err(BettingError::InsufficientStack(
+                        self.stacks[seat as usize],
+                        bet_amount,
+                    ));
                 }
                 // Bet must be at least the big blind (min_raise)
                 if bet_amount < self.min_raise {
-                    return Err(BettingError::BelowMinRaise);
+                    return Err(BettingError::BelowMinRaise(self.min_raise, bet_amount));
                 }
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(bet_amount);
                 self.current_high = bet_amount;
                 self.min_raise = bet_amount; // minimum raise becomes the bet amount (difference)
                 self.total_pot = self.total_pot.saturating_add(bet_amount);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(bet_amount);
+                // Mark as all-in if stack is now zero
+                if self.stacks[seat as usize] == 0 {
+                    self.all_in[seat as usize] = true;
+                }
                 // Reset acted flags because a new bet level resets the round
                 self.acted_this_round = [false, false];
                 self.mark_action(seat);
@@ -186,19 +211,25 @@ impl Betting {
             ActionKind::Raise => {
                 // Raise allowed only if there is a previous bet (current_high > 0)
                 if self.current_high == 0 {
-                    return Err(BettingError::IllegalAction);
+                    return Err(BettingError::IllegalAction(
+                        "cannot raise: no bet to raise, use bet instead".to_string(),
+                    ));
                 }
                 let raise_amount = amount.ok_or(BettingError::InvalidAmount)?;
                 if raise_amount > self.stacks[seat as usize] {
-                    return Err(BettingError::InsufficientStack);
+                    return Err(BettingError::InsufficientStack(
+                        self.stacks[seat as usize],
+                        raise_amount,
+                    ));
                 }
                 // Total bet after raise must be at least current_high + min_raise
                 let total_bet_after = self.bets[seat as usize].saturating_add(raise_amount);
-                if total_bet_after < self.current_high + self.min_raise {
+                let min_total_bet = self.current_high.saturating_add(self.min_raise);
+                if total_bet_after < min_total_bet {
                     // Unless player is all-in (raise_amount equals their remaining stack)
                     let is_all_in = raise_amount == self.stacks[seat as usize];
                     if !is_all_in {
-                        return Err(BettingError::BelowMinRaise);
+                        return Err(BettingError::BelowMinRaise(min_total_bet, total_bet_after));
                     }
                     // All-in raise less than min raise is allowed
                 }
@@ -207,6 +238,10 @@ impl Betting {
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(additional);
                 self.total_pot = self.total_pot.saturating_add(additional);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(additional);
+                // Mark as all-in if stack is now zero
+                if self.stacks[seat as usize] == 0 {
+                    self.all_in[seat as usize] = true;
+                }
                 if total_bet_after > self.current_high {
                     self.min_raise = total_bet_after.saturating_sub(self.current_high);
                     self.current_high = total_bet_after;
@@ -220,12 +255,20 @@ impl Betting {
     }
 
     /// Mark that a player has acted this round. If both players have acted and bets are equal,
-    /// the betting round is complete.
+    /// or if one player is all-in and the other has acted, the betting round is complete.
     fn mark_action(&mut self, seat: Seat) {
         // Mark this seat as acted
         self.acted_this_round[seat as usize] = true;
-        // If both players have acted and bets are equal, round is complete
-        if self.acted_this_round[0] && self.acted_this_round[1] && self.bets[0] == self.bets[1] {
+        // Check for betting round completion:
+        // 1. Both players have acted and bets are equal, OR
+        // 2. Both players are all-in, OR
+        // 3. One player is all-in and both have acted (even if bets not equal)
+        let both_acted = self.acted_this_round[0] && self.acted_this_round[1];
+        let both_all_in = self.all_in[0] && self.all_in[1];
+        let one_all_in = self.all_in[0] || self.all_in[1];
+        let bets_equal = self.bets[0] == self.bets[1];
+
+        if both_acted && (bets_equal || both_all_in || one_all_in) {
             self.round_complete = true;
         }
     }

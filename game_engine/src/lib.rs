@@ -11,12 +11,14 @@ mod player;
 mod pot;
 mod table;
 
+pub type ChipCount = u64;
+
 pub use action::{Action, ActionKind};
 pub use betting::{Betting, BettingError};
 pub use card::{Card, Rank, Suit};
 pub use config::ServerConfig;
 pub use deck::Deck;
-pub use hand::{ChipCount, Hand, HandId, Seat, Street};
+pub use hand::{Hand, HandId, Seat, Street};
 pub use hand_evaluation::{evaluate_hand, HandRank};
 pub use player::{ConnectionId, Player};
 pub use pot::{Pot, SidePot};
