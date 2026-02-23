@@ -9,6 +9,12 @@ pub type ChipCount = u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ConnectionId(Uuid);
 
+impl std::fmt::Display for ConnectionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl ConnectionId {
     pub fn new(uuid: Uuid) -> Self {
         Self(uuid)

@@ -18,6 +18,12 @@ impl TableId {
     }
 }
 
+impl std::fmt::Display for TableId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableConfig {
     pub small_blind: ChipCount,
@@ -35,11 +41,11 @@ impl TableConfig {
                 self.small_blind, self.big_blind
             ));
         }
-        if self.starting_stack < self.big_blind * 20 {
+        let min_stack = self.big_blind.saturating_mul(20);
+        if self.starting_stack < min_stack {
             return Err(format!(
                 "starting_stack ({}) must be at least big_blind * 20 ({})",
-                self.starting_stack,
-                self.big_blind * 20
+                self.starting_stack, min_stack
             ));
         }
         if self.action_timeout_secs == 0 {
