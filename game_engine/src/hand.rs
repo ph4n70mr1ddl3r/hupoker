@@ -70,7 +70,7 @@ impl Hand {
         let mut deck = deck;
         let mut hole_cards = [Vec::new(), Vec::new()];
         for _ in 0..HOLE_CARDS_PER_SEAT {
-            for cards in hole_cards.iter_mut() {
+            for cards in &mut hole_cards {
                 if let Some(card) = deck.draw() {
                     cards.push(card);
                 }
@@ -223,8 +223,7 @@ impl Hand {
             Street::PreFlop => 0,
             Street::Flop => 3,
             Street::Turn => 4,
-            Street::River => 5,
-            Street::Showdown | Street::Finished => 5,
+            Street::River | Street::Showdown | Street::Finished => 5,
         };
         if self.community_cards.len() != expected_community {
             return Err(format!(
@@ -238,7 +237,7 @@ impl Hand {
         self.pot.validate()?;
         // validate each action
         for (i, action) in self.actions.iter().enumerate() {
-            action.validate().map_err(|e| format!("action {} invalid: {}", i, e))?;
+            action.validate().map_err(|e| format!("action {i} invalid: {e}"))?;
         }
         Ok(())
     }

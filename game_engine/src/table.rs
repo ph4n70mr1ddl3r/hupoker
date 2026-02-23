@@ -86,14 +86,13 @@ impl Table {
         }
         // If current_hand is Some, both seats must be occupied and not sitting out
         if let Some(_hand) = &self.current_hand {
-            let occupied_seats: Vec<_> = self.seats.iter().filter_map(|s| s.as_ref()).collect();
-            if occupied_seats.len() != 2 {
+            if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
                 return Err("current_hand exists but not both seats occupied".to_string());
             }
             for (i, seat) in self.seats.iter().enumerate() {
                 if let Some(player) = seat {
                     if player.is_sitting_out {
-                        return Err(format!("seat {} is sitting out but hand is in progress", i));
+                        return Err(format!("seat {i} is sitting out but hand is in progress"));
                     }
                 }
             }
@@ -107,8 +106,7 @@ impl Table {
     /// Returns the new HandId on success.
     pub fn start_hand(&mut self, seed: [u8; 32]) -> Result<HandId, String> {
         // Validate both seats occupied
-        let occupied_seats: Vec<_> = self.seats.iter().filter_map(|s| s.as_ref()).collect();
-        if occupied_seats.len() != 2 {
+        if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
             return Err("cannot start hand: both seats must be occupied".to_string());
         }
         // Ensure no current hand

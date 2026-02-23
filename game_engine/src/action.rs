@@ -25,11 +25,11 @@ pub enum ActionKind {
 impl std::fmt::Display for ActionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ActionKind::Fold => write!(f, "Fold"),
-            ActionKind::Check => write!(f, "Check"),
-            ActionKind::Call => write!(f, "Call"),
-            ActionKind::Bet => write!(f, "Bet"),
-            ActionKind::Raise => write!(f, "Raise"),
+            Self::Fold => write!(f, "Fold"),
+            Self::Check => write!(f, "Check"),
+            Self::Call => write!(f, "Call"),
+            Self::Bet => write!(f, "Bet"),
+            Self::Raise => write!(f, "Raise"),
         }
     }
 }

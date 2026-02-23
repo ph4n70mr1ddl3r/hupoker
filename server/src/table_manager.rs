@@ -54,10 +54,9 @@ impl TableManager {
                     new_player.disconnected_at = None;
                     table.seats[seat as usize] = Some(new_player);
                     return Ok(());
-                } else {
-                    // Timeout expired; remove the player (seat becomes empty)
-                    table.seats[seat as usize] = None;
                 }
+                // Timeout expired; remove the player (seat becomes empty)
+                table.seats[seat as usize] = None;
             } else {
                 // Player connected, seat occupied
                 return Err("seat already occupied".to_string());

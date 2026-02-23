@@ -51,7 +51,7 @@ impl AuditLog {
             .create(true)
             .append(true)
             .open(path.as_ref())
-            .with_context(|| format!("failed to open audit log {:?}", path.as_ref()))?;
+            .with_context(|| format!("failed to open audit log {}", path.as_ref().display()))?;
         let writer = BufWriter::new(file);
         let cipher = encryption_key.map(|key| {
             let key = Key::from_slice(&key);
@@ -62,7 +62,7 @@ impl AuditLog {
 
     pub fn log_event(&mut self, event: AuditEvent) -> Result<()> {
         let json = serde_json::to_string(&event).context("failed to serialize audit event")?;
-        writeln!(self.writer, "{}", json).context("failed to write audit log")?;
+        writeln!(self.writer, "{json}").context("failed to write audit log")?;
         self.writer.flush()?;
         Ok(())
     }
@@ -75,11 +75,11 @@ impl AuditLog {
                 // Generate random nonce
                 let mut nonce_bytes = [0u8; 12];
                 getrandom(&mut nonce_bytes)
-                    .map_err(|e| anyhow::anyhow!("failed to generate nonce: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("failed to generate nonce: {e}"))?;
                 let nonce_obj = Nonce::from_slice(&nonce_bytes);
                 let encrypted = cipher
                     .encrypt(nonce_obj, seed.as_ref())
-                    .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("seed encryption failed: {e}"))?;
                 (
                     general_purpose::STANDARD.encode(nonce_bytes),
                     general_purpose::STANDARD.encode(encrypted),
@@ -135,14 +135,14 @@ impl AuditLog {
         let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
         let mut nonce_bytes = [0u8; 12];
         getrandom(&mut nonce_bytes)
-            .map_err(|e| anyhow::anyhow!("failed to generate nonce: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to generate nonce: {e}"))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let encrypted = cipher
             .encrypt(nonce, seed.as_ref())
-            .map_err(|e| anyhow::anyhow!("seed encryption failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("seed encryption failed: {e}"))?;
         let nonce_b64 = general_purpose::STANDARD.encode(nonce_bytes);
         let encrypted_b64 = general_purpose::STANDARD.encode(encrypted);
-        Ok(format!("{}:{}", nonce_b64, encrypted_b64))
+        Ok(format!("{nonce_b64}:{encrypted_b64}"))
     }
 
     pub fn decrypt_seed(encrypted_with_nonce: &str, key: &[u8; 32]) -> Result<[u8; 32]> {
@@ -157,17 +157,17 @@ impl AuditLog {
         }
         let nonce_bytes = general_purpose::STANDARD
             .decode(parts[0])
-            .map_err(|e| anyhow::anyhow!("failed to decode nonce: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to decode nonce: {e}"))?;
         if nonce_bytes.len() != 12 {
             return Err(anyhow::anyhow!("nonce must be 12 bytes, got {}", nonce_bytes.len()));
         }
         let nonce = Nonce::from_slice(&nonce_bytes);
         let encrypted = general_purpose::STANDARD
             .decode(parts[1])
-            .map_err(|e| anyhow::anyhow!("failed to decode encrypted seed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("failed to decode encrypted seed: {e}"))?;
         let seed = cipher
             .decrypt(nonce, encrypted.as_ref())
-            .map_err(|e| anyhow::anyhow!("seed decryption failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("seed decryption failed: {e}"))?;
         if seed.len() != 32 {
             return Err(anyhow::anyhow!("decrypted seed must be 32 bytes, got {}", seed.len()));
         }

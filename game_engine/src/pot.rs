@@ -26,14 +26,14 @@ impl Pot {
         // main pot can be zero
         for (i, side) in self.side_pots.iter().enumerate() {
             if side.amount == 0 {
-                return Err(format!("side pot {} amount is zero", i));
+                return Err(format!("side pot {i} amount is zero"));
             }
             if side.eligible_seats.is_empty() {
-                return Err(format!("side pot {} has no eligible seats", i));
+                return Err(format!("side pot {i} has no eligible seats"));
             }
             for &seat in &side.eligible_seats {
                 if !super::hand::seat_is_valid(seat) {
-                    return Err(format!("side pot {} invalid seat {}", i, seat));
+                    return Err(format!("side pot {i} invalid seat {seat}"));
                 }
             }
             // ensure no duplicate seats? maybe fine

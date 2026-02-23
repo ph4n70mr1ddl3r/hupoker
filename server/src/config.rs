@@ -5,9 +5,9 @@ use std::path::Path;
 
 pub fn load_config(path: impl AsRef<Path>) -> Result<ServerConfig> {
     let content = fs::read_to_string(path.as_ref())
-        .with_context(|| format!("failed to read config file {:?}", path.as_ref()))?;
+        .with_context(|| format!("failed to read config file {}", path.as_ref().display()))?;
     let config: ServerConfig = toml::from_str(&content)
-        .with_context(|| format!("failed to parse config file {:?}", path.as_ref()))?;
+        .with_context(|| format!("failed to parse config file {}", path.as_ref().display()))?;
     config
         .validate()
         .map_err(|e| anyhow::anyhow!(e))

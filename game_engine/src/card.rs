@@ -25,21 +25,21 @@ pub enum Rank {
 }
 
 impl Rank {
-    pub fn value(self) -> u8 {
+    pub const fn value(self) -> u8 {
         match self {
-            Rank::Two => 2,
-            Rank::Three => 3,
-            Rank::Four => 4,
-            Rank::Five => 5,
-            Rank::Six => 6,
-            Rank::Seven => 7,
-            Rank::Eight => 8,
-            Rank::Nine => 9,
-            Rank::Ten => 10,
-            Rank::Jack => 11,
-            Rank::Queen => 12,
-            Rank::King => 13,
-            Rank::Ace => 14,
+            Self::Two => 2,
+            Self::Three => 3,
+            Self::Four => 4,
+            Self::Five => 5,
+            Self::Six => 6,
+            Self::Seven => 7,
+            Self::Eight => 8,
+            Self::Nine => 9,
+            Self::Ten => 10,
+            Self::Jack => 11,
+            Self::Queen => 12,
+            Self::King => 13,
+            Self::Ace => 14,
         }
     }
 }

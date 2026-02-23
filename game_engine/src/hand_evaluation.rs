@@ -37,12 +37,12 @@ fn is_straight(cards: &[Card]) -> bool {
         return false;
     }
     let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
-    values.sort();
+    values.sort_unstable();
     values.dedup();
     // handle ace low straight (A-2-3-4-5)
     if values.contains(&14) {
         let mut low_values: Vec<u8> = values.iter().map(|&v| if v == 14 { 1 } else { v }).collect();
-        low_values.sort();
+        low_values.sort_unstable();
         low_values.dedup();
         for window in low_values.windows(5) {
             if window[4] - window[0] == 4 {
@@ -81,7 +81,7 @@ fn evaluate_5card_hand(cards: &[Card]) -> HandRank {
     if is_flush && is_straight {
         // check royal flush
         let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
-        values.sort();
+        values.sort_unstable();
         if values == [10, 11, 12, 13, 14] {
             return HandRank::RoyalFlush;
         }
