@@ -67,26 +67,24 @@ impl AuditLog {
         Ok(())
     }
 
-    /// Log a hand start event with the given seed and hand ID.
-    /// If encryption is enabled, the seed is encrypted before logging.
     pub fn log_seed(&mut self, hand_id: HandId, table_id: &TableId, seed: &[u8; 32]) -> Result<()> {
-        let (nonce, rng_seed_encrypted) = match &self.cipher {
-            Some(cipher) => {
-                // Generate random nonce
-                let mut nonce_bytes = [0u8; 12];
-                getrandom(&mut nonce_bytes)
-                    .map_err(|e| anyhow::anyhow!("failed to generate nonce: {e}"))?;
-                let nonce_obj = Nonce::from_slice(&nonce_bytes);
-                let encrypted = cipher
-                    .encrypt(nonce_obj, seed.as_ref())
-                    .map_err(|e| anyhow::anyhow!("seed encryption failed: {e}"))?;
-                (
-                    general_purpose::STANDARD.encode(nonce_bytes),
-                    general_purpose::STANDARD.encode(encrypted),
-                )
+        let cipher = match &self.cipher {
+            Some(c) => c,
+            None => {
+                return Err(anyhow::anyhow!(
+                    "cannot log seed without encryption: encryption key must be configured"
+                ));
             }
-            None => ("unencrypted".to_string(), general_purpose::STANDARD.encode(seed)),
         };
+        let mut nonce_bytes = [0u8; 12];
+        getrandom(&mut nonce_bytes)
+            .map_err(|e| anyhow::anyhow!("failed to generate nonce: {e}"))?;
+        let nonce_obj = Nonce::from_slice(&nonce_bytes);
+        let encrypted = cipher
+            .encrypt(nonce_obj, seed.as_ref())
+            .map_err(|e| anyhow::anyhow!("seed encryption failed: {e}"))?;
+        let nonce = general_purpose::STANDARD.encode(nonce_bytes);
+        let rng_seed_encrypted = general_purpose::STANDARD.encode(encrypted);
         let event = AuditEvent::HandStart {
             hand_id,
             table_id: table_id.clone(),

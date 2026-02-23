@@ -64,14 +64,12 @@ impl Hand {
         button_position: Seat,
         player_stacks: [ChipCount; 2],
         seed: [u8; 32],
-    ) -> Self {
+    ) -> Result<Self, String> {
         use uuid::Uuid;
-        // Create deck with seed
         let deck = super::Deck::new(seed);
-        // Create betting with posted blinds
         let betting =
-            super::betting::Betting::new(small_blind, big_blind, player_stacks, button_position);
-        // Deal hole cards (two cards per seat)
+            super::betting::Betting::new(small_blind, big_blind, player_stacks, button_position)
+                .map_err(|e| format!("failed to post blinds: {}", e))?;
         let mut deck = deck;
         let mut hole_cards = [Vec::new(), Vec::new()];
         for _ in 0..HOLE_CARDS_PER_SEAT {
@@ -81,10 +79,8 @@ impl Hand {
                 }
             }
         }
-        // Initial pot is the total from betting (blinds)
         let pot = super::Pot { main: betting.total_pot(), side_pots: Vec::new() };
-        // Create hand
-        Self {
+        Ok(Self {
             id: HandId(Uuid::new_v4()),
             deck,
             betting,
@@ -98,7 +94,7 @@ impl Hand {
             player_stacks,
             button_position,
             last_action_time: Some(Utc::now()),
-        }
+        })
     }
 
     pub fn advance_street(&mut self) -> Result<(), String> {
@@ -107,9 +103,13 @@ impl Hand {
             return Err("cannot advance street while betting round is incomplete".to_string());
         }
         // Move betting pot to main pot
-        self.pot.main += self.betting.total_pot();
+        self.pot.main = self.pot.main.saturating_add(self.betting.total_pot());
         // Reset betting for next street with current stacks
-        self.betting = super::betting::Betting::new_street(self.big_blind, self.betting.stacks());
+        self.betting = super::betting::Betting::new_street(
+            self.big_blind,
+            self.betting.stacks(),
+            self.button_position,
+        );
         self.last_action_time = Some(Utc::now());
         // Deal community cards based on street
         match self.current_street {
@@ -167,35 +167,31 @@ impl Hand {
     }
 
     pub fn evaluate_winner(&self) -> Vec<Seat> {
-        // Determine which players have folded
         let mut folded = [false, false];
         for action in &self.actions {
             if action.kind == super::ActionKind::Fold {
                 folded[action.seat as usize] = true;
             }
         }
-        // Collect active seats
         let active_seats: Vec<Seat> =
             (0..NUM_SEATS as usize).filter(|&i| !folded[i]).map(|i| i as Seat).collect();
         if active_seats.is_empty() {
-            return Vec::new(); // no active players (should not happen)
+            return Vec::new();
         }
         if active_seats.len() == 1 {
-            // Only one player left, they win
             return active_seats;
         }
-        // Evaluate best hand for each active player
-        let mut best_rank = super::hand_evaluation::HandRank::HighCard;
+        let mut best_score: super::hand_evaluation::HandScore = 0;
         let mut winners = Vec::new();
         for &seat in &active_seats {
             let hole = &self.hole_cards[seat as usize];
             let cards: Vec<_> = hole.iter().chain(self.community_cards.iter()).copied().collect();
-            let rank = super::hand_evaluation::evaluate_hand(&cards);
-            if rank > best_rank {
-                best_rank = rank;
+            let score = super::hand_evaluation::evaluate_hand_score(&cards);
+            if score > best_score {
+                best_score = score;
                 winners.clear();
                 winners.push(seat);
-            } else if rank == best_rank {
+            } else if score == best_score {
                 winners.push(seat);
             }
         }

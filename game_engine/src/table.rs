@@ -104,41 +104,29 @@ impl Table {
         Ok(())
     }
 
-    /// Start a new hand at this table.
-    /// Requires both seats occupied and no current hand.
-    /// `seed` is a 32-byte random seed for the deck.
-    /// Returns the new HandId on success.
     pub fn start_hand(&mut self, seed: [u8; 32]) -> Result<HandId, String> {
-        // Validate both seats occupied
         if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
             return Err("cannot start hand: both seats must be occupied".to_string());
         }
-        // Ensure no current hand
         if self.current_hand.is_some() {
             return Err("cannot start hand: a hand is already in progress".to_string());
         }
-        // Collect player stacks (safe since we already validated both seats are occupied)
         let player_stacks = [
             self.seats[0].as_ref().map(|p| p.stack).ok_or("seat 0 should be occupied")?,
             self.seats[1].as_ref().map(|p| p.stack).ok_or("seat 1 should be occupied")?,
         ];
-        // Determine button position
         let button_position = self.next_button_position;
-        // Create hand
         let hand = Hand::deal(
             self.config.small_blind,
             self.config.big_blind,
             button_position,
             player_stacks,
             seed,
-        );
-        // Store hand id for returning
+        )?;
         let hand_id = hand.id;
-        // Update table state
         self.current_hand = Some(hand);
-        // Advance button position for next hand (toggle 0<->1)
         self.next_button_position = 1 - self.next_button_position;
-        self.hand_count += 1;
+        self.hand_count = self.hand_count.saturating_add(1);
         Ok(hand_id)
     }
 }

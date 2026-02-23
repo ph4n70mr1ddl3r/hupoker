@@ -1,14 +1,21 @@
 use anyhow::{Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter,
+};
 use tracing::debug;
 
-/// Reads a newline-delimited JSON message from the stream.
+const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+
 pub async fn read_message<T: DeserializeOwned, R: AsyncRead + Unpin>(
     stream: &mut BufReader<R>,
 ) -> Result<T> {
     let mut line = String::new();
-    stream.read_line(&mut line).await.context("failed to read line")?;
+    let mut limited = stream.take(MAX_MESSAGE_SIZE as u64);
+    limited.read_line(&mut line).await.context("failed to read line")?;
+    if line.len() >= MAX_MESSAGE_SIZE {
+        return Err(anyhow::anyhow!("message exceeds maximum size of {} bytes", MAX_MESSAGE_SIZE));
+    }
     debug!("received line: {}", line.trim());
     let msg: T = serde_json::from_str(&line).context("failed to parse JSON")?;
     Ok(msg)

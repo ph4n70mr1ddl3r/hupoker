@@ -78,7 +78,7 @@ impl Server {
             let awards = Self::award_pots_to_winners(hand, winners);
             for (seat, award) in awards.iter().enumerate() {
                 if let Some(player) = table.seats[seat].as_mut() {
-                    player.stack += award;
+                    player.stack = player.stack.saturating_add(*award);
                 }
             }
         }
@@ -217,7 +217,7 @@ impl Server {
             None => return,
         };
         // Verify it's this seat's turn (should be true if timeout detected)
-        let acting_seat = hand.betting.acting_seat(hand.button_position);
+        let acting_seat = hand.betting.acting_seat();
         if acting_seat != Some(seat) {
             return;
         }
@@ -244,7 +244,7 @@ impl Server {
         }
 
         // Broadcast updated hand state (fold action applied)
-        let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
+        let next_acting_seat = hand_clone.betting.acting_seat();
         let time_remaining_ms = config.action_timeout_secs * MILLISECONDS_PER_SECOND;
         self.connection_manager
             .broadcast_to_table(&table_id, |player_seat| {
@@ -502,7 +502,7 @@ async fn handle_join_table(
                     if let Some(hand) = &table.current_hand {
                         let time_remaining_ms =
                             table.config.action_timeout_secs * MILLISECONDS_PER_SECOND;
-                        let acting_seat = hand.betting.acting_seat(hand.button_position);
+                        let acting_seat = hand.betting.acting_seat();
                         Some(create_hand_state_message(
                             hand,
                             table_id.clone(),
@@ -694,7 +694,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     }
                 };
                 // Validate it's player's turn
-                let acting_seat = hand.betting.acting_seat(hand.button_position);
+                let acting_seat = hand.betting.acting_seat();
                 if acting_seat != Some(seat) {
                     drop(tm);
                     let error = Message::Error {
@@ -743,7 +743,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 }
 
                 // Determine acting seat for next player (or None if round complete)
-                let next_acting_seat = hand_clone.betting.acting_seat(hand_clone.button_position);
+                let next_acting_seat = hand_clone.betting.acting_seat();
                 let time_remaining_ms = config.action_timeout_secs * MILLISECONDS_PER_SECOND;
                 server
                     .connection_manager
@@ -803,8 +803,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         let hand_clone = hand.clone();
                         let config = table.config.clone();
                         drop(tm);
-                        let next_acting_seat =
-                            hand_clone.betting.acting_seat(hand_clone.button_position);
+                        let next_acting_seat = hand_clone.betting.acting_seat();
                         let time_remaining_ms =
                             config.action_timeout_secs * MILLISECONDS_PER_SECOND;
                         server

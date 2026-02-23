@@ -22,12 +22,12 @@ fn test_audit_log_without_encryption() {
     let hand_id = HandId::new(Uuid::new_v4());
     let table_id = TableId::new("test-table".to_string());
     let seed = [0xAAu8; 32];
-    audit_log.log_seed(hand_id, &table_id, &seed).unwrap();
+    let result = audit_log.log_seed(hand_id, &table_id, &seed);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("encryption key must be configured"));
     audit_log.log_action(hand_id, 0, game_engine::ActionKind::Check, None).unwrap();
     audit_log.log_hand_end(hand_id, &table_id, vec![0], 1000).unwrap();
-    // read file and verify it contains JSON lines
     let content = fs::read_to_string(temp_path).unwrap();
-    assert!(content.contains("HandStart"));
     assert!(content.contains("Action"));
     assert!(content.contains("HandEnd"));
     fs::remove_file(temp_path).unwrap();

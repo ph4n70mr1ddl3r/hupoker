@@ -112,7 +112,7 @@ impl TableManager {
                 None => continue,
             };
             // Determine whose turn it is
-            let acting_seat = match hand.betting.acting_seat(hand.button_position) {
+            let acting_seat = match hand.betting.acting_seat() {
                 Some(seat) => seat,
                 None => continue,
             };

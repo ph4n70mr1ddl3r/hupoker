@@ -2,22 +2,15 @@ use super::{ActionKind, ChipCount, Seat};
 
 #[derive(Debug, Clone, Default)]
 pub struct Betting {
-    // bets placed by each player in the current betting round (not total contributions)
     bets: [ChipCount; 2],
-    // current highest bet in this round (including previous raises)
     current_high: ChipCount,
-    // minimum raise amount (big blind initially, then difference between raises)
     min_raise: ChipCount,
-    // total chips in the pot (sum of all bets from all streets)
     total_pot: ChipCount,
-    // whether the betting round is complete (both players acted and bets are equal, or all-in situation)
     round_complete: bool,
-    // player stacks (remaining chips) - needed to validate all-in
     stacks: [ChipCount; 2],
-    // which seats have acted in the current betting round
     acted_this_round: [bool; 2],
-    // which seats are all-in
     all_in: [bool; 2],
+    first_actor: Seat,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,33 +27,49 @@ pub enum BettingError {
     IllegalAction(String),
     #[error("betting round already complete")]
     RoundComplete,
+    #[error("player at seat {0} cannot afford small blind: has {1}, needs {2}")]
+    CannotAffordSmallBlind(Seat, ChipCount, ChipCount),
+    #[error("player at seat {0} cannot afford big blind: has {1}, needs {2}")]
+    CannotAffordBigBlind(Seat, ChipCount, ChipCount),
 }
 
 impl Betting {
-    /// Starts a new betting round (e.g., preflop, flop, turn, river).
-    /// `small_blind` and `big_blind` are used for minimum bet sizes (preflop only).
-    /// `stacks` are current player stacks before posting blinds.
-    /// `button_position` determines who posts small blind (seat 0) and big blind (seat 1).
     pub fn new(
         small_blind: ChipCount,
         big_blind: ChipCount,
         stacks: [ChipCount; 2],
         button_position: Seat,
-    ) -> Self {
-        let mut bets = [0, 0];
-        // post blinds
+    ) -> Result<Self, BettingError> {
         let small_blind_seat = button_position;
         let big_blind_seat = 1 - button_position;
+
+        if stacks[small_blind_seat as usize] < small_blind {
+            return Err(BettingError::CannotAffordSmallBlind(
+                small_blind_seat,
+                stacks[small_blind_seat as usize],
+                small_blind,
+            ));
+        }
+        if stacks[big_blind_seat as usize] < big_blind {
+            return Err(BettingError::CannotAffordBigBlind(
+                big_blind_seat,
+                stacks[big_blind_seat as usize],
+                big_blind,
+            ));
+        }
+
+        let mut bets = [0, 0];
         bets[small_blind_seat as usize] = small_blind;
         bets[big_blind_seat as usize] = big_blind;
-        // after posting blinds, current high is big blind, min raise is big blind (difference)
         let current_high = big_blind;
-        let min_raise = big_blind; // minimum raise is the big blind amount (difference)
-        let total_pot = small_blind + big_blind;
+        let min_raise = big_blind;
+        let total_pot = small_blind.saturating_add(big_blind);
         let mut new_stacks = stacks;
-        new_stacks[small_blind_seat as usize] -= small_blind;
-        new_stacks[big_blind_seat as usize] -= big_blind;
-        Self {
+        new_stacks[small_blind_seat as usize] =
+            new_stacks[small_blind_seat as usize].saturating_sub(small_blind);
+        new_stacks[big_blind_seat as usize] =
+            new_stacks[big_blind_seat as usize].saturating_sub(big_blind);
+        Ok(Self {
             bets,
             current_high,
             min_raise,
@@ -69,13 +78,11 @@ impl Betting {
             stacks: new_stacks,
             acted_this_round: [false, false],
             all_in: [false, false],
-        }
+            first_actor: button_position,
+        })
     }
 
-    /// Starts a new betting round for post‑flop streets (no blinds posted).
-    /// `big_blind` is used for minimum bet size.
-    /// `stacks` are current player stacks.
-    pub fn new_street(big_blind: ChipCount, stacks: [ChipCount; 2]) -> Self {
+    pub fn new_street(big_blind: ChipCount, stacks: [ChipCount; 2], button_position: Seat) -> Self {
         Self {
             bets: [0, 0],
             current_high: 0,
@@ -85,6 +92,7 @@ impl Betting {
             stacks,
             acted_this_round: [false, false],
             all_in: [false, false],
+            first_actor: 1 - button_position,
         }
     }
 
@@ -196,7 +204,7 @@ impl Betting {
                 }
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(bet_amount);
                 self.current_high = bet_amount;
-                self.min_raise = bet_amount; // minimum raise becomes the bet amount (difference)
+                self.min_raise = bet_amount;
                 self.total_pot = self.total_pot.saturating_add(bet_amount);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(bet_amount);
                 // Mark as all-in if stack is now zero
@@ -273,23 +281,17 @@ impl Betting {
         }
     }
 
-    /// Returns the seat that should act next, or None if the betting round is complete.
-    pub fn acting_seat(&self, button_position: Seat) -> Option<Seat> {
+    pub fn acting_seat(&self) -> Option<Seat> {
         if self.round_complete {
             return None;
         }
-        // Determine which seats have acted this round
         if !self.acted_this_round[0] && !self.acted_this_round[1] {
-            // No one has acted yet; first to act is button_position
-            Some(button_position)
+            Some(self.first_actor)
         } else if self.acted_this_round[0] && !self.acted_this_round[1] {
-            // Seat 0 acted, seat 1 hasn't
             Some(1)
         } else if !self.acted_this_round[0] && self.acted_this_round[1] {
-            // Seat 1 acted, seat 0 hasn't
             Some(0)
         } else {
-            // Both have acted (but round not complete?) should not happen
             None
         }
     }

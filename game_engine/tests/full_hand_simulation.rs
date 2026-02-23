@@ -1,13 +1,11 @@
 use chrono::Utc;
 use game_engine::{Action, ActionKind, Hand, Street};
 
-/// Simulate a simple hand where both players check down to showdown.
 #[test]
 fn full_hand_simulation_checkdown() {
     let seed = [0u8; 32];
-    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
 
-    // Preflop: small blind calls, big blind checks
     println!(
         "Before call: bets {:?}, round_complete {}",
         hand.betting.bets(),
@@ -38,7 +36,6 @@ fn full_hand_simulation_checkdown() {
     assert_eq!(hand.current_street, Street::Flop);
     assert_eq!(hand.community_cards.len(), 3);
 
-    // Flop: both check
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Check,
@@ -58,7 +55,6 @@ fn full_hand_simulation_checkdown() {
     assert_eq!(hand.current_street, Street::Turn);
     assert_eq!(hand.community_cards.len(), 4);
 
-    // Turn: both check
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Check,
@@ -78,7 +74,6 @@ fn full_hand_simulation_checkdown() {
     assert_eq!(hand.current_street, Street::River);
     assert_eq!(hand.community_cards.len(), 5);
 
-    // River: both check
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Check,
@@ -97,20 +92,17 @@ fn full_hand_simulation_checkdown() {
     hand.advance_street().expect("advance to showdown should succeed");
     assert_eq!(hand.current_street, Street::Showdown);
 
-    // Evaluate winner
     let winners = hand.evaluate_winner();
     assert!(!winners.is_empty());
     assert!(winners.len() <= 2);
     println!("Winners: {:?}", winners);
 }
 
-/// Simulate a hand where one player folds preflop.
 #[test]
 fn full_hand_simulation_fold_preflop() {
     let seed = [0u8; 32];
-    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
 
-    // Small blind folds
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Fold,
@@ -118,19 +110,16 @@ fn full_hand_simulation_fold_preflop() {
         timestamp: Utc::now(),
     })
     .expect("fold should succeed");
-    // Hand should be over, no further actions allowed
     assert!(hand.betting.is_round_complete());
     let winners = hand.evaluate_winner();
-    assert_eq!(winners, vec![1]); // big blind wins
+    assert_eq!(winners, vec![1]);
 }
 
-/// Simulate a hand with a bet and a call.
 #[test]
 fn full_hand_simulation_bet_call() {
     let seed = [0u8; 32];
-    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed);
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
 
-    // Small blind raises to 100 (raise)
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Raise,
@@ -138,7 +127,6 @@ fn full_hand_simulation_bet_call() {
         timestamp: Utc::now(),
     })
     .expect("raise should succeed");
-    // Big blind calls the raise (needs to call 80 more)
     hand.apply_action(Action {
         seat: 1,
         kind: ActionKind::Call,
@@ -149,7 +137,6 @@ fn full_hand_simulation_bet_call() {
     assert!(hand.betting.is_round_complete());
     hand.advance_street().expect("advance to flop");
     assert_eq!(hand.current_street, Street::Flop);
-    // Continue with checks down (simplified)
     hand.apply_action(Action {
         seat: 0,
         kind: ActionKind::Check,
@@ -165,5 +152,4 @@ fn full_hand_simulation_bet_call() {
     })
     .expect("check");
     hand.advance_street().expect("advance to turn");
-    // ... could continue but we'll stop here.
 }

@@ -17,7 +17,7 @@ pub struct SidePot {
 
 impl Pot {
     pub fn total(&self) -> ChipCount {
-        self.main + self.side_pots.iter().map(|p| p.amount).sum::<ChipCount>()
+        self.main.saturating_add(self.side_pots.iter().map(|p| p.amount).sum::<ChipCount>())
     }
 
     pub fn validate(&self) -> Result<(), String> {
