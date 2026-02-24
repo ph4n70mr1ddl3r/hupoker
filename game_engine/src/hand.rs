@@ -22,6 +22,10 @@ impl HandId {
     pub fn new(uuid: Uuid) -> Self {
         Self(uuid)
     }
+
+    pub fn new_v4() -> Self {
+        Self(Uuid::new_v4())
+    }
 }
 
 impl std::fmt::Display for HandId {

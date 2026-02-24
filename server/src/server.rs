@@ -150,7 +150,6 @@ impl Server {
             None => return Ok(None),
         };
         let config = table.config.clone();
-        let button_position = table.next_button_position;
         let occupied_seats: Vec<_> = table.seats.iter().filter_map(|s| s.as_ref()).collect();
         if occupied_seats.len() != 2 || table.current_hand.is_some() {
             return Ok(None);
@@ -187,13 +186,13 @@ impl Server {
         drop(tm);
         self.connection_manager
             .broadcast_to_table(table_id, |seat| {
-                let acting_seat = button_position;
+                let acting_seat = hand.betting.acting_seat();
                 let time_remaining_ms = config.action_timeout_secs.saturating_mul(1000);
                 create_hand_state_message(
                     &hand,
                     table_id.clone(),
                     seat,
-                    Some(acting_seat),
+                    acting_seat,
                     time_remaining_ms,
                 )
             })

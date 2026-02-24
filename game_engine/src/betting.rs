@@ -78,7 +78,7 @@ impl Betting {
             stacks: new_stacks,
             acted_this_round: [false, false],
             all_in: [false, false],
-            first_actor: button_position,
+            first_actor: 1 - button_position,
         })
     }
 
