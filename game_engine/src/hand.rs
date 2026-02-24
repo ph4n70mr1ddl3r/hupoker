@@ -67,7 +67,6 @@ impl Hand {
         player_stacks: [ChipCount; 2],
         seed: [u8; 32],
     ) -> Result<Self, String> {
-        use uuid::Uuid;
         let deck = super::Deck::new(seed);
         let betting =
             super::betting::Betting::new(small_blind, big_blind, player_stacks, button_position)
