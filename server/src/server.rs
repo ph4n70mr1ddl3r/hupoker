@@ -345,6 +345,15 @@ impl Server {
         Ok(listener)
     }
 
+    fn make_error_msg(code: &str, message: &str, original_type: &str) -> Message {
+        Message::Error {
+            version: PROTOCOL_VERSION.to_string(),
+            code: code.to_string(),
+            message: message.to_string(),
+            original_type: original_type.to_string(),
+        }
+    }
+
     pub async fn run(&self, listener: TcpListener) -> Result<()> {
         let server = self.clone();
         // Start background timeout checker
@@ -645,12 +654,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 let (table_id, seat) = match (current_table.as_ref(), current_seat) {
                     (Some(table_id), Some(seat)) => (table_id.clone(), seat),
                     _ => {
-                        let error = Message::Error {
-                            version: PROTOCOL_VERSION.to_string(),
-                            code: "not_at_table".to_string(),
-                            message: "must join a table before acting".to_string(),
-                            original_type: "action".to_string(),
-                        };
+                        let error = Server::make_error_msg(
+                            "not_at_table",
+                            "must join a table before acting",
+                            "action",
+                        );
                         if tx.send(error).is_err() {
                             server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
@@ -664,12 +672,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     Some(table) => table,
                     None => {
                         drop(tm);
-                        let error = Message::Error {
-                            version: PROTOCOL_VERSION.to_string(),
-                            code: "table_not_found".to_string(),
-                            message: "table no longer exists".to_string(),
-                            original_type: "action".to_string(),
-                        };
+                        let error = Server::make_error_msg(
+                            "table_not_found",
+                            "table no longer exists",
+                            "action",
+                        );
                         if tx.send(error).is_err() {
                             server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
@@ -681,12 +688,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     Some(hand) if hand.id == hand_id => hand,
                     _ => {
                         drop(tm);
-                        let error = Message::Error {
-                            version: PROTOCOL_VERSION.to_string(),
-                            code: "hand_not_found".to_string(),
-                            message: "hand not found or not active".to_string(),
-                            original_type: "action".to_string(),
-                        };
+                        let error = Server::make_error_msg(
+                            "hand_not_found",
+                            "hand not found or not active",
+                            "action",
+                        );
                         if tx.send(error).is_err() {
                             server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
@@ -698,12 +704,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 let acting_seat = hand.betting.acting_seat();
                 if acting_seat != Some(seat) {
                     drop(tm);
-                    let error = Message::Error {
-                        version: PROTOCOL_VERSION.to_string(),
-                        code: "not_your_turn".to_string(),
-                        message: "it is not your turn to act".to_string(),
-                        original_type: "action".to_string(),
-                    };
+                    let error = Server::make_error_msg(
+                        "not_your_turn",
+                        "it is not your turn to act",
+                        "action",
+                    );
                     if tx.send(error).is_err() {
                         server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());
@@ -715,12 +720,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 // Apply action
                 if let Err(e) = hand.apply_action(action.clone()) {
                     drop(tm);
-                    let error = Message::Error {
-                        version: PROTOCOL_VERSION.to_string(),
-                        code: "illegal_action".to_string(),
-                        message: e,
-                        original_type: "action".to_string(),
-                    };
+                    let error = Server::make_error_msg("illegal_action", &e, "action");
                     if tx.send(error).is_err() {
                         server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());
@@ -853,12 +853,11 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
             }
             _ => {
                 warn!("unexpected message type: {:?}", msg);
-                let error = Message::Error {
-                    version: PROTOCOL_VERSION.to_string(),
-                    code: "unexpected_message".to_string(),
-                    message: "message not allowed in current state".to_string(),
-                    original_type: "unknown".to_string(),
-                };
+                let error = Server::make_error_msg(
+                    "unexpected_message",
+                    "message not allowed in current state",
+                    "unknown",
+                );
                 if tx.send(error).is_err() {
                     server.cleanup_connection(current_table.as_ref(), current_seat).await;
                     break Ok(());

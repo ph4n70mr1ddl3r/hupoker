@@ -15,7 +15,7 @@ const ACE_VALUE: u8 = 14;
 const FIVE_VALUE: u8 = 5;
 const TEN_VALUE: u8 = 10;
 
-const _ASSERT_BIT_PACKING: () = assert!(
+const _: () = assert!(
     (STRAIGHT_FLUSH_HIGH_SHIFT - MAIN_RANK_SHIFT) >= 4
         && (MAIN_RANK_SHIFT - SECONDARY_RANK_SHIFT) >= 4
         && (SECONDARY_RANK_SHIFT - KICKER_SHIFT) >= 4

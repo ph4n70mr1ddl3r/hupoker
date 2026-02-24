@@ -34,7 +34,10 @@ impl Pot {
                     return Err(format!("side pot {i} invalid seat {seat}"));
                 }
             }
-            // ensure no duplicate seats? maybe fine
+            let unique_seats: std::collections::HashSet<_> = side.eligible_seats.iter().collect();
+            if unique_seats.len() != side.eligible_seats.len() {
+                return Err(format!("side pot {i} has duplicate seats"));
+            }
         }
         Ok(())
     }
