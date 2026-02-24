@@ -108,15 +108,16 @@ impl ConnectionDialog {
             Arc::new(Runtime::new().expect("failed to create tokio runtime"))
         });
         let rt = Arc::clone(rt);
+        let seat = 0;
         let result: Result<(Connection, TableState, Vec<HandState>), anyhow::Error> =
             rt.block_on(async {
                 // Connect TCP
                 let mut conn = Connection::connect(&address).await?;
                 // Perform handshake
                 conn.handshake("hupoker-client", "0.1.0").await?;
-                // Join default table (table-0) seat 0
+                // Join default table (table-0)
                 let table_id = game_engine::TableId::new("table-0".to_string());
-                let (table_state, hand_states) = conn.join_table(table_id, 0).await?;
+                let (table_state, hand_states) = conn.join_table(table_id, seat).await?;
                 Ok((conn, table_state, hand_states))
             });
         match result {
@@ -124,11 +125,10 @@ impl ConnectionDialog {
                 let table_id = table_state.table_id.clone();
                 self.connection = Some(conn);
                 self.table_state = Some(table_state);
-                self.hand_state = hand_states.into_iter().next(); // store first hand state, if any
+                self.hand_state = hand_states.into_iter().next();
                 self.connection_status = ConnectionStatus::Connected;
                 self.reconnect_table_id = Some(table_id);
-                // TODO: Support seat selection. Currently hardcoded to seat 0.
-                self.reconnect_seat = Some(0);
+                self.reconnect_seat = Some(seat);
                 self.reconnect_attempts = 0;
                 self.last_reconnect_attempt = None;
             }
@@ -154,8 +154,6 @@ impl ConnectionDialog {
     fn start_reconnecting(&mut self) {
         if let Some(table_state) = &self.table_state {
             self.reconnect_table_id = Some(table_state.table_id.clone());
-            // TODO: Track which seat we were occupying. Currently hardcoded to seat 0.
-            self.reconnect_seat = Some(0);
         }
         self.connection_status = ConnectionStatus::Reconnecting;
         self.reconnect_attempts = 0;
