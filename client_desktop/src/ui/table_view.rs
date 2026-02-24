@@ -18,6 +18,7 @@ pub struct TableView {
     pub hand_id: Option<game_engine::HandId>,
     pub community_cards: Vec<Card>,
     pub pot: Pot,
+    pub current_bets: [u64; 2],
     pub player_stacks: [u64; 2],
     pub button_position: u8,
     pub current_street: Street,
@@ -45,6 +46,7 @@ impl TableView {
             hand_id: None,
             community_cards: Vec::new(),
             pot: Pot { main: 0, side_pots: vec![] },
+            current_bets: [0, 0],
             player_stacks: [DEFAULT_STACK_SIZE, DEFAULT_STACK_SIZE],
             button_position: 0,
             current_street: Street::PreFlop,
@@ -69,6 +71,7 @@ impl TableView {
         self.hand_id = Some(hand_state.hand_id);
         self.community_cards = hand_state.community_cards.clone();
         self.pot = hand_state.pot.clone();
+        self.current_bets = hand_state.current_bets;
         self.current_street = hand_state.current_street;
         self.player_stacks = hand_state.player_stacks;
         self.button_position = hand_state.button_position;
@@ -131,6 +134,7 @@ impl TableView {
                 hole_cards,
                 community_cards,
                 pot,
+                current_bets,
                 current_street,
                 actions,
                 player_stacks,
@@ -145,6 +149,7 @@ impl TableView {
                     hole_cards,
                     community_cards,
                     pot,
+                    current_bets,
                     current_street,
                     actions,
                     player_stacks,
@@ -272,23 +277,50 @@ impl TableView {
         ui.horizontal(|ui| {
             let is_my_turn = self.acting_seat == Some(self.player_seat);
             ui.set_enabled(is_my_turn);
+
+            let my_bet = self.current_bets[self.player_seat as usize];
+            let opponent_bet = self.current_bets[1 - self.player_seat as usize];
+            let call_amount = opponent_bet.saturating_sub(my_bet);
+            let my_stack = self.player_stacks[self.player_seat as usize];
+            let max_call = my_stack.min(call_amount);
+
             if ui.button("Fold").clicked() {
                 let _ = self.handle_action(ActionKind::Fold, None);
             }
+
+            let can_check = call_amount == 0;
+            ui.set_enabled(is_my_turn && can_check);
             if ui.button("Check").clicked() {
                 let _ = self.handle_action(ActionKind::Check, None);
             }
-            if ui.button("Call").clicked() {
-                // TODO: Calculate actual call amount based on current bets and player stack
-                let _ = self.handle_action(ActionKind::Call, Some(DEFAULT_BET_AMOUNT));
+            ui.set_enabled(is_my_turn);
+
+            let call_button_label = if call_amount == 0 {
+                "Check".to_string()
+            } else {
+                format!("Call ({} chips)", max_call)
+            };
+            if ui.button(&call_button_label).clicked() {
+                if call_amount == 0 {
+                    let _ = self.handle_action(ActionKind::Check, None);
+                } else {
+                    let _ = self.handle_action(ActionKind::Call, Some(max_call));
+                }
             }
+
+            let can_bet = my_bet == 0 && my_stack > 0;
+            ui.set_enabled(is_my_turn && can_bet);
             if ui.button("Bet").clicked() {
-                // TODO: Implement UI for bet amount selection with minimum bet validation
-                let _ = self.handle_action(ActionKind::Bet, Some(DEFAULT_BET_AMOUNT));
+                let bet_amount = my_stack.min(DEFAULT_BET_AMOUNT);
+                let _ = self.handle_action(ActionKind::Bet, Some(bet_amount));
             }
+            ui.set_enabled(is_my_turn);
+
+            let can_raise = call_amount > 0 && my_stack > call_amount;
+            ui.set_enabled(is_my_turn && can_raise);
             if ui.button("Raise").clicked() {
-                // TODO: Implement UI for raise amount with minimum raise validation
-                let _ = self.handle_action(ActionKind::Raise, Some(DEFAULT_RAISE_AMOUNT));
+                let raise_amount = (my_stack - call_amount).min(DEFAULT_RAISE_AMOUNT);
+                let _ = self.handle_action(ActionKind::Raise, Some(raise_amount));
             }
         });
     }

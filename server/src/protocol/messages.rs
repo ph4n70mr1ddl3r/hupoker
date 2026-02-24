@@ -47,6 +47,7 @@ pub enum Message {
         hole_cards: Vec<Card>, // only for the receiving player
         community_cards: Vec<Card>,
         pot: Pot,
+        current_bets: [u64; 2], // current bet amount for each seat
         current_street: Street,
         actions: Vec<Action>,
         player_stacks: [u64; 2],
@@ -121,6 +122,7 @@ pub struct HandState {
     pub hole_cards: Vec<Card>,
     pub community_cards: Vec<Card>,
     pub pot: Pot,
+    pub current_bets: [u64; 2],
     pub current_street: Street,
     pub actions: Vec<Action>,
     pub player_stacks: [u64; 2],

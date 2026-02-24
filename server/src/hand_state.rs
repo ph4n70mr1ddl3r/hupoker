@@ -25,6 +25,7 @@ pub fn create_hand_state_message(
         hole_cards,
         community_cards: hand.community_cards.clone(),
         pot: hand.pot.clone(),
+        current_bets: hand.betting.bets(),
         current_street: hand.current_street,
         actions: hand.actions.clone(),
         player_stacks: hand.player_stacks,
