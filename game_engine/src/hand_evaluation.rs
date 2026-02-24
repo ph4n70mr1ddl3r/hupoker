@@ -3,15 +3,25 @@ use super::Rank;
 use super::Suit;
 
 const HAND_SIZE: usize = 5;
+
 const STRAIGHT_FLUSH_HIGH_SHIFT: u32 = 20;
 const MAIN_RANK_SHIFT: u32 = 16;
 const SECONDARY_RANK_SHIFT: u32 = 12;
 const KICKER_SHIFT: u32 = 8;
 const CARD_VALUE_SHIFT: u32 = 4;
+
 const ACE_LOW_VALUE: u8 = 1;
 const ACE_VALUE: u8 = 14;
 const FIVE_VALUE: u8 = 5;
 const TEN_VALUE: u8 = 10;
+
+const _ASSERT_BIT_PACKING: () = assert!(
+    (STRAIGHT_FLUSH_HIGH_SHIFT - MAIN_RANK_SHIFT) >= 4
+        && (MAIN_RANK_SHIFT - SECONDARY_RANK_SHIFT) >= 4
+        && (SECONDARY_RANK_SHIFT - KICKER_SHIFT) >= 4
+        && (KICKER_SHIFT - CARD_VALUE_SHIFT) >= 4,
+    "Hand score bit packing requires 4+ bits between shifts"
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HandRank {

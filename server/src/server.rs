@@ -394,7 +394,7 @@ async fn handle_handshake(
         version: PROTOCOL_VERSION.to_string(),
         status: "accepted".to_string(),
         server_name: "hupoker-server".to_string(),
-        server_version: "0.1.0".to_string(),
+        server_version: env!("CARGO_PKG_VERSION").to_string(),
     };
     write_message(writer, &server_hello).await?;
     writer.flush().await?;
