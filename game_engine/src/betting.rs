@@ -171,6 +171,13 @@ impl Betting {
                 }
                 // Player can call less if all-in (amount < call_amount)
                 let actual_call = amount.min(call_amount);
+                // Cannot overcall (bet more than call amount without raising)
+                if amount > call_amount && amount < call_amount + self.min_raise {
+                    return Err(BettingError::IllegalAction(format!(
+                        "cannot call more than {} chips (use raise to increase bet)",
+                        call_amount
+                    )));
+                }
                 self.bets[seat as usize] = self.bets[seat as usize].saturating_add(actual_call);
                 self.total_pot = self.total_pot.saturating_add(actual_call);
                 self.stacks[seat as usize] = self.stacks[seat as usize].saturating_sub(actual_call);
