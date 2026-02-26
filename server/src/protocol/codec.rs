@@ -5,7 +5,7 @@ use tokio::io::{
 };
 use tracing::debug;
 
-const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 
 pub async fn read_message<T: DeserializeOwned, R: AsyncRead + Unpin>(
     stream: &mut BufReader<R>,

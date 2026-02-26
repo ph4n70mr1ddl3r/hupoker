@@ -319,7 +319,9 @@ impl TableView {
             let can_raise = call_amount > 0 && my_stack > call_amount;
             ui.set_enabled(is_my_turn && can_raise);
             if ui.button("Raise").clicked() {
-                let raise_amount = (my_stack - call_amount).min(DEFAULT_RAISE_AMOUNT);
+                let raise_increment =
+                    DEFAULT_RAISE_AMOUNT.min(my_stack.saturating_sub(call_amount));
+                let raise_amount = call_amount.saturating_add(raise_increment);
                 let _ = self.handle_action(ActionKind::Raise, Some(raise_amount));
             }
         });

@@ -12,6 +12,7 @@ pub struct Action {
     pub timestamp: DateTime<Utc>,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionKind {
     Fold,

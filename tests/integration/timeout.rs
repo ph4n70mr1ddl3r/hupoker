@@ -1,47 +1,11 @@
+mod common;
+
 use anyhow::Result;
+use common::TestClient;
 use game_engine::{ServerConfig, TableConfig};
 use server::{audit_log::AuditLog, protocol::Message, server::Server};
 use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
-
-/// A simple test client that holds a TCP connection and can send/receive messages.
-struct TestClient {
-    reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
-    writer: BufWriter<tokio::net::tcp::OwnedWriteHalf>,
-}
-
-impl TestClient {
-    async fn connect(addr: std::net::SocketAddr) -> Result<Self> {
-        let stream = TcpStream::connect(addr).await?;
-        let (read_half, write_half) = stream.into_split();
-        let reader = BufReader::new(read_half);
-        let writer = BufWriter::new(write_half);
-        Ok(Self { reader, writer })
-    }
-
-    /// Send a JSON message (newline-delimited)
-    async fn send(&mut self, msg: &serde_json::Value) -> Result<()> {
-        let line = serde_json::to_string(msg)? + "\n";
-        self.writer.write_all(line.as_bytes()).await?;
-        self.writer.flush().await?;
-        Ok(())
-    }
-
-    /// Receive a JSON message, parsing into the generic Message enum.
-    async fn recv(&mut self) -> Result<Message> {
-        let mut line = String::new();
-        self.reader.read_line(&mut line).await?;
-        let msg: Message = serde_json::from_str(&line)?;
-        Ok(msg)
-    }
-
-    /// Receive with a timeout.
-    async fn recv_timeout(&mut self, dur: Duration) -> Result<Message> {
-        timeout(dur, self.recv()).await?
-    }
-}
 
 /// Integration test for action timeout: a player that does not act within the allowed time
 /// should be auto‑folded.

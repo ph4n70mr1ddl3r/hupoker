@@ -272,18 +272,13 @@ impl Betting {
     /// Mark that a player has acted this round. If both players have acted and bets are equal,
     /// or if one player is all-in and the other has acted, the betting round is complete.
     fn mark_action(&mut self, seat: Seat) {
-        // Mark this seat as acted
         self.acted_this_round[seat as usize] = true;
-        // Check for betting round completion:
-        // 1. Both players have acted and bets are equal, OR
-        // 2. Both players are all-in, OR
-        // 3. One player is all-in and both have acted (even if bets not equal)
         let both_acted = self.acted_this_round[0] && self.acted_this_round[1];
         let both_all_in = self.all_in[0] && self.all_in[1];
         let one_all_in = self.all_in[0] || self.all_in[1];
         let bets_equal = self.bets[0] == self.bets[1];
 
-        if both_acted && (bets_equal || both_all_in || one_all_in) {
+        if both_all_in || (both_acted && (bets_equal || one_all_in)) {
             self.round_complete = true;
         }
     }

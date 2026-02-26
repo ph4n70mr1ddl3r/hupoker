@@ -1,5 +1,8 @@
 //! Game engine for heads-up NLHE poker.
 
+#![warn(clippy::all)]
+#![allow(clippy::module_name_repetitions)]
+
 mod action;
 mod betting;
 mod card;

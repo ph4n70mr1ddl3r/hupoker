@@ -1,47 +1,11 @@
+mod common;
+
 use anyhow::Result;
+use common::TestClient;
 use game_engine::{ServerConfig, TableConfig};
 use server::{audit_log::AuditLog, protocol::Message, server::Server};
 use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
-use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
-
-/// A simple test client that holds a TCP connection and can send/receive messages.
-struct TestClient {
-    reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
-    writer: BufWriter<tokio::net::tcp::OwnedWriteHalf>,
-}
-
-impl TestClient {
-    async fn connect(addr: std::net::SocketAddr) -> Result<Self> {
-        let stream = TcpStream::connect(addr).await?;
-        let (read_half, write_half) = stream.into_split();
-        let reader = BufReader::new(read_half);
-        let writer = BufWriter::new(write_half);
-        Ok(Self { reader, writer })
-    }
-
-    /// Send a JSON message (newline-delimited)
-    async fn send(&mut self, msg: &serde_json::Value) -> Result<()> {
-        let line = serde_json::to_string(msg)? + "\n";
-        self.writer.write_all(line.as_bytes()).await?;
-        self.writer.flush().await?;
-        Ok(())
-    }
-
-    /// Receive a JSON message, parsing into the generic Message enum.
-    async fn recv(&mut self) -> Result<Message> {
-        let mut line = String::new();
-        self.reader.read_line(&mut line).await?;
-        let msg: Message = serde_json::from_str(&line)?;
-        Ok(msg)
-    }
-
-    /// Receive with a timeout.
-    async fn recv_timeout(&mut self, dur: Duration) -> Result<Message> {
-        timeout(dur, self.recv()).await?
-    }
-}
 
 /// Integration test simulating a full NLHE hand with two automated players.
 /// This test expects the server to start a hand when both seats are occupied,
@@ -78,39 +42,47 @@ async fn full_hand_simulation_two_players() -> Result<()> {
 
     // Connect player 1 (seat 0)
     let mut client1 = TestClient::connect(addr).await?;
-    client1.send(&serde_json::json!({
-        "type": "client_hello",
-        "version": "1.0",
-        "client_name": "test",
-        "client_version": "0.1.0"
-    })).await?;
+    client1
+        .send(&serde_json::json!({
+            "type": "client_hello",
+            "version": "1.0",
+            "client_name": "test",
+            "client_version": "0.1.0"
+        }))
+        .await?;
     let server_hello = client1.recv().await?;
     assert!(matches!(server_hello, Message::ServerHello { .. }));
-    client1.send(&serde_json::json!({
-        "type": "join_table",
-        "version": "1.0",
-        "table_id": "table-0",
-        "seat": 0
-    })).await?;
+    client1
+        .send(&serde_json::json!({
+            "type": "join_table",
+            "version": "1.0",
+            "table_id": "table-0",
+            "seat": 0
+        }))
+        .await?;
     let table_state = client1.recv().await?;
     assert!(matches!(table_state, Message::TableState { .. }));
 
     // Connect player 2 (seat 1)
     let mut client2 = TestClient::connect(addr).await?;
-    client2.send(&serde_json::json!({
-        "type": "client_hello",
-        "version": "1.0",
-        "client_name": "test",
-        "client_version": "0.1.0"
-    })).await?;
+    client2
+        .send(&serde_json::json!({
+            "type": "client_hello",
+            "version": "1.0",
+            "client_name": "test",
+            "client_version": "0.1.0"
+        }))
+        .await?;
     let server_hello2 = client2.recv().await?;
     assert!(matches!(server_hello2, Message::ServerHello { .. }));
-    client2.send(&serde_json::json!({
-        "type": "join_table",
-        "version": "1.0",
-        "table_id": "table-0",
-        "seat": 1
-    })).await?;
+    client2
+        .send(&serde_json::json!({
+            "type": "join_table",
+            "version": "1.0",
+            "table_id": "table-0",
+            "seat": 1
+        }))
+        .await?;
     let table_state2 = client2.recv().await?;
     assert!(matches!(table_state2, Message::TableState { .. }));
 

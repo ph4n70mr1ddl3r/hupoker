@@ -598,7 +598,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
     }
 
     // Create channel for outgoing messages
-    // Note: Using unbounded channel for simplicity; bounded would require async send throughout
+    // Note: Bounded channel would require async send throughout the handler functions.
+    // Current design uses unbounded for simplicity; consider bounded channel (e.g., 100) for production.
     let (tx, mut rx) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
