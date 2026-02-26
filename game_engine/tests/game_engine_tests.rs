@@ -80,3 +80,64 @@ fn hand_evaluate_winner_showdown() {
     let winners = hand.evaluate_winner();
     assert!(!winners.is_empty() && winners.len() <= 2);
 }
+
+#[test]
+fn betting_acting_seat_after_bet() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(0));
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Call,
+        amount: Some(10),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(1));
+
+    hand.apply_action(Action {
+        seat: 1,
+        kind: ActionKind::Raise,
+        amount: Some(60),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(0));
+}
+
+#[test]
+fn betting_all_in_short_stack() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [15, 1500], seed).unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(0));
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Call,
+        amount: Some(5),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert!(hand.betting.stacks()[0] == 0);
+}
+
+#[test]
+fn betting_cannot_check_with_bet_pending() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
+
+    let result = hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Check,
+        amount: None,
+        timestamp: Utc::now(),
+    });
+
+    assert!(result.is_err());
+}

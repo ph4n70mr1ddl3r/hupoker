@@ -390,6 +390,39 @@ mod tests {
     }
 
     #[test]
+    fn test_wheel_straight() {
+        let cards = vec![
+            card(Ace, Clubs),
+            card(Two, Diamonds),
+            card(Three, Hearts),
+            card(Four, Spades),
+            card(Five, Clubs),
+            card(King, Diamonds),
+            card(Queen, Hearts),
+        ];
+        assert_eq!(evaluate_hand(&cards), HandRank::Straight);
+    }
+
+    #[test]
+    fn test_wheel_straight_beats_nothing() {
+        let wheel = vec![
+            card(Ace, Clubs),
+            card(Two, Diamonds),
+            card(Three, Hearts),
+            card(Four, Spades),
+            card(Five, Clubs),
+        ];
+        let high_card = vec![
+            card(Ace, Clubs),
+            card(King, Diamonds),
+            card(Queen, Hearts),
+            card(Jack, Spades),
+            card(Nine, Clubs),
+        ];
+        assert!(evaluate_hand_score(&wheel) > evaluate_hand_score(&high_card));
+    }
+
+    #[test]
     fn test_flush() {
         let cards = vec![
             card(Two, Clubs),

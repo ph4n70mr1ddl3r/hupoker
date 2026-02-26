@@ -17,10 +17,6 @@ use tracing::{error, info, warn};
 
 const DEFAULT_STACK_SIZE: u64 = 1500;
 const ALL_SEATS: &[u8; 2] = &[0, 1];
-/// Recommended channel bound for production use. Currently using unbounded for simplicity.
-/// TODO: Consider migrating to bounded channel with this capacity.
-#[allow(dead_code)]
-const RECOMMENDED_CHANNEL_BOUND: usize = 100;
 
 #[derive(Clone)]
 pub struct Server {
