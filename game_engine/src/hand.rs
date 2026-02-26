@@ -33,6 +33,15 @@ impl std::fmt::Display for HandId {
     }
 }
 
+impl std::str::FromStr for HandId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::parse_str(s).map_err(|e| format!("invalid hand ID: {}", e))?;
+        Ok(Self(uuid))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Street {
     PreFlop,

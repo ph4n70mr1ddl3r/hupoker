@@ -19,6 +19,15 @@ impl ConnectionId {
     }
 }
 
+impl std::str::FromStr for ConnectionId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::parse_str(s).map_err(|e| format!("invalid connection ID: {}", e))?;
+        Ok(Self(uuid))
+    }
+}
+
 /// A connected player at a table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {

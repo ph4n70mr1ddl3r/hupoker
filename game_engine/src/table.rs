@@ -23,6 +23,17 @@ impl std::fmt::Display for TableId {
     }
 }
 
+impl std::str::FromStr for TableId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err("table ID cannot be empty".to_string());
+        }
+        Ok(Self(s.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableConfig {
     pub small_blind: ChipCount,
