@@ -16,6 +16,7 @@ pub struct Betting {
     first_actor: Seat,
 }
 
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum BettingError {
     #[error("invalid bet amount: amount must be provided for bet/raise/call actions")]

@@ -225,3 +225,65 @@ fn all_in_with_short_stack() {
 
     assert_eq!(hand.betting.stacks()[0], 0);
 }
+
+#[test]
+fn all_in_raise_below_minimum_allowed() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [25, 1500], seed).unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(0));
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Raise,
+        amount: Some(15),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert_eq!(hand.betting.stacks()[0], 0);
+    assert!(!hand.betting.is_round_complete());
+
+    hand.apply_action(Action {
+        seat: 1,
+        kind: ActionKind::Call,
+        amount: Some(15),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert!(hand.betting.is_round_complete());
+}
+
+#[test]
+fn betting_round_completes_when_one_player_all_in() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [20, 1500], seed).unwrap();
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Call,
+        amount: Some(10),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    hand.apply_action(Action {
+        seat: 1,
+        kind: ActionKind::Raise,
+        amount: Some(100),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Call,
+        amount: Some(0),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert_eq!(hand.betting.stacks()[0], 0);
+    assert!(hand.betting.is_round_complete());
+}

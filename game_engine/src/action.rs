@@ -22,6 +22,7 @@ pub enum ActionKind {
     Raise,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum ActionError {
     #[error("invalid seat: {0}")]
@@ -42,6 +43,21 @@ impl std::fmt::Display for ActionKind {
             Self::Call => write!(f, "Call"),
             Self::Bet => write!(f, "Bet"),
             Self::Raise => write!(f, "Raise"),
+        }
+    }
+}
+
+impl std::str::FromStr for ActionKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Fold" => Ok(Self::Fold),
+            "Check" => Ok(Self::Check),
+            "Call" => Ok(Self::Call),
+            "Bet" => Ok(Self::Bet),
+            "Raise" => Ok(Self::Raise),
+            _ => Err(format!("invalid action kind: {}", s)),
         }
     }
 }

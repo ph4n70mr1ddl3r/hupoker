@@ -43,6 +43,7 @@ pub struct TableConfig {
     pub reconnection_timeout_secs: u64,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum TableError {
     #[error("invalid table config: {0}")]

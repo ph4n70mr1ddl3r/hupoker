@@ -52,6 +52,7 @@ pub enum Street {
     Finished,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum HandError {
     #[error("failed to post blinds: {0}")]
