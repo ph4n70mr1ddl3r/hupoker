@@ -10,7 +10,6 @@ const SECONDARY_RANK_SHIFT: u32 = 12;
 const KICKER_SHIFT: u32 = 8;
 const CARD_VALUE_SHIFT: u32 = 4;
 
-const ACE_LOW_VALUE: u8 = 1;
 const ACE_VALUE: u8 = 14;
 const FIVE_VALUE: u8 = 5;
 const TEN_VALUE: u8 = 10;
@@ -63,38 +62,51 @@ fn is_straight(cards: &[Card]) -> bool {
     if cards.len() < HAND_SIZE {
         return false;
     }
-    let mut values: Vec<u8> = cards.iter().map(|c| c.rank.value()).collect();
-    values.sort_unstable();
-    values.dedup();
-    if values.contains(&ACE_VALUE) {
-        let mut low_values: Vec<u8> =
-            values.iter().map(|&v| if v == ACE_VALUE { ACE_LOW_VALUE } else { v }).collect();
-        low_values.sort_unstable();
-        low_values.dedup();
-        for window in low_values.windows(HAND_SIZE) {
-            if window[HAND_SIZE - 1] - window[0] == 4 {
+    let mut values = [false; 15];
+    for card in cards {
+        values[card.rank.value() as usize] = true;
+    }
+    let mut consecutive = 0;
+    for &present in values.iter().skip(2).take(ACE_VALUE as usize - 1) {
+        if present {
+            consecutive += 1;
+            if consecutive >= HAND_SIZE {
                 return true;
             }
+        } else {
+            consecutive = 0;
         }
     }
-    for window in values.windows(HAND_SIZE) {
-        if window[HAND_SIZE - 1] - window[0] == 4 {
-            return true;
+    if values[ACE_VALUE as usize] {
+        values[1] = true;
+    }
+    consecutive = 0;
+    for &present in values.iter().skip(1).take(5) {
+        if present {
+            consecutive += 1;
+        } else {
+            return false;
         }
     }
-    false
+    consecutive >= HAND_SIZE
 }
 
 fn count_ranks(cards: &[Card]) -> Vec<(Rank, u8)> {
-    use std::collections::HashMap;
-    let mut map = HashMap::new();
+    let mut counts = [0u8; 13];
     for card in cards {
-        *map.entry(card.rank).or_insert(0) += 1;
+        counts[card.rank.value() as usize - 2] += 1;
     }
-    let mut counts: Vec<_> = map.into_iter().collect();
-    counts.sort_by_key(|&(rank, count)| (count, rank.value()));
-    counts.reverse();
-    counts
+    let mut result: Vec<(Rank, u8)> = cards
+        .iter()
+        .map(|c| c.rank)
+        .filter(|&r| counts[r.value() as usize - 2] > 0)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .map(|r| (r, counts[r.value() as usize - 2]))
+        .collect();
+    result.sort_by_key(|&(rank, count)| (count, rank.value()));
+    result.reverse();
+    result
 }
 
 fn evaluate_5card_hand(cards: &[Card]) -> HandRank {

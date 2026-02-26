@@ -8,6 +8,7 @@ pub struct Card {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Rank {
     Two,
     Three,
@@ -45,6 +46,7 @@ impl Rank {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Suit {
     Clubs,
     Diamonds,

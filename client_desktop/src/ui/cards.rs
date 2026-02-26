@@ -10,6 +10,7 @@ impl CardWidget {
         let color = match card.suit {
             Suit::Clubs | Suit::Spades => Color32::BLACK,
             Suit::Diamonds | Suit::Hearts => Color32::RED,
+            _ => Color32::GRAY,
         };
 
         // Card background
@@ -45,6 +46,7 @@ fn rank_symbol(rank: Rank) -> &'static str {
         Rank::Queen => "Q",
         Rank::King => "K",
         Rank::Ace => "A",
+        _ => "?",
     }
 }
 
@@ -54,5 +56,6 @@ fn suit_symbol(suit: Suit) -> &'static str {
         Suit::Diamonds => "♦",
         Suit::Hearts => "♥",
         Suit::Spades => "♠",
+        _ => "?",
     }
 }

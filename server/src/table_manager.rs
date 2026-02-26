@@ -81,6 +81,18 @@ impl TableManager {
         table.start_hand(seed).map_err(|e| e.to_string())
     }
 
+    /// Start a new hand with a pre-generated HandId.
+    /// This allows audit logging to happen atomically before the hand starts.
+    pub fn start_hand_with_id(
+        &mut self,
+        table_id: &TableId,
+        seed: [u8; 32],
+        hand_id: game_engine::HandId,
+    ) -> Result<game_engine::HandId, String> {
+        let table = self.get_table_mut(table_id).ok_or_else(|| "table not found".to_string())?;
+        table.start_hand_with_id(seed, hand_id).map_err(|e| e.to_string())
+    }
+
     /// Mark a player as disconnected at the given seat.
     /// Returns true if the seat was occupied and the player was marked.
     pub fn mark_disconnected(&mut self, table_id: &TableId, seat: u8) -> bool {

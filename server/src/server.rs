@@ -159,12 +159,9 @@ impl Server {
         let mut seed = [0u8; 32];
         getrandom(&mut seed)
             .map_err(|e| anyhow::anyhow!("failed to generate random seed: {}", e))?;
-        // Start hand
-        let hand_id = tm
-            .start_hand(table_id, seed)
-            .map_err(|e| anyhow::anyhow!("failed to start hand: {}", e))?;
-        drop(tm);
-        // Log seed to audit log (encrypted) - critical for game verifiability
+        // Log seed to audit log (encrypted) BEFORE starting hand - critical for game verifiability
+        // We generate the hand_id first so we can log atomically
+        let hand_id = game_engine::HandId::new_v4();
         {
             let mut audit_log = self.audit_log.lock().await;
             audit_log.log_seed(hand_id, table_id, &seed).map_err(|e| {
@@ -175,6 +172,10 @@ impl Server {
                 )
             })?;
         }
+        // Start hand with pre-generated ID
+        tm.start_hand_with_id(table_id, seed, hand_id)
+            .map_err(|e| anyhow::anyhow!("failed to start hand: {}", e))?;
+        drop(tm);
         info!("started hand {:?} at table {}", hand_id, table_id.as_str());
         let tm = self.table_manager.lock().await;
         let hand = match tm.get_table(table_id).and_then(|t| t.current_hand.as_ref()) {
@@ -327,16 +328,31 @@ impl Server {
             let mut interval = interval(Duration::from_secs(1));
             loop {
                 interval.tick().await;
-                // Check for timed‑out players
                 let timed_out = {
                     let tm = self.table_manager.lock().await;
                     tm.check_action_timeouts()
                 };
                 for (table_id, seat) in timed_out {
-                    self.apply_auto_fold(table_id, seat).await;
+                    if let Err(e) = self.apply_auto_fold_safe(&table_id, seat).await {
+                        error!(
+                            "failed to apply auto-fold for seat {} at table {}: {}",
+                            seat,
+                            table_id.as_str(),
+                            e
+                        );
+                    }
                 }
             }
         });
+    }
+
+    async fn apply_auto_fold_safe(
+        &self,
+        table_id: &game_engine::TableId,
+        seat: game_engine::Seat,
+    ) -> Result<(), anyhow::Error> {
+        self.apply_auto_fold(table_id.clone(), seat).await;
+        Ok(())
     }
 
     pub async fn bind(&self) -> Result<TcpListener> {

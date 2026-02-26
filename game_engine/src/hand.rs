@@ -103,6 +103,24 @@ impl Hand {
         player_stacks: [ChipCount; 2],
         seed: [u8; 32],
     ) -> Result<Self, HandError> {
+        Self::deal_with_id(
+            small_blind,
+            big_blind,
+            button_position,
+            player_stacks,
+            seed,
+            HandId::new_v4(),
+        )
+    }
+
+    pub fn deal_with_id(
+        small_blind: ChipCount,
+        big_blind: ChipCount,
+        button_position: Seat,
+        player_stacks: [ChipCount; 2],
+        seed: [u8; 32],
+        hand_id: HandId,
+    ) -> Result<Self, HandError> {
         let deck = super::Deck::new(seed);
         let betting =
             super::betting::Betting::new(small_blind, big_blind, player_stacks, button_position)?;
@@ -117,7 +135,7 @@ impl Hand {
         }
         let pot = super::Pot { main: 0, side_pots: Vec::new() };
         Ok(Self {
-            id: HandId(Uuid::new_v4()),
+            id: hand_id,
             deck,
             betting,
             small_blind,

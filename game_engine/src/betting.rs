@@ -35,6 +35,8 @@ pub enum BettingError {
     CannotAffordSmallBlind(Seat, ChipCount, ChipCount),
     #[error("player at seat {0} cannot afford big blind: has {1}, needs {2}")]
     CannotAffordBigBlind(Seat, ChipCount, ChipCount),
+    #[error("no player currently acting")]
+    NoActingPlayer,
 }
 
 impl Betting {
@@ -159,8 +161,12 @@ impl Betting {
         if self.round_complete {
             return Err(BettingError::RoundComplete);
         }
-        if self.acting_seat() != Some(seat) {
-            return Err(BettingError::OutOfTurn(self.acting_seat().unwrap_or(0)));
+        let acting = match self.acting_seat() {
+            Some(seat) => seat,
+            None => return Err(BettingError::NoActingPlayer),
+        };
+        if acting != seat {
+            return Err(BettingError::OutOfTurn(acting));
         }
         match kind {
             ActionKind::Fold => {

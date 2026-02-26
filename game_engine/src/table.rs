@@ -158,4 +158,35 @@ impl Table {
         self.hand_count = self.hand_count.saturating_add(1);
         Ok(hand_id)
     }
+
+    pub fn start_hand_with_id(
+        &mut self,
+        seed: [u8; 32],
+        hand_id: HandId,
+    ) -> Result<HandId, TableError> {
+        if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
+            return Err(TableError::NotEnoughPlayers);
+        }
+        if self.current_hand.is_some() {
+            return Err(TableError::HandInProgress);
+        }
+        let player_stacks = [
+            self.seats[0].as_ref().map(|p| p.stack).ok_or(TableError::SeatNotOccupied(0))?,
+            self.seats[1].as_ref().map(|p| p.stack).ok_or(TableError::SeatNotOccupied(1))?,
+        ];
+        let button_position = self.next_button_position;
+        let hand = Hand::deal_with_id(
+            self.config.small_blind,
+            self.config.big_blind,
+            button_position,
+            player_stacks,
+            seed,
+            hand_id,
+        )?;
+        let hand_id = hand.id;
+        self.current_hand = Some(hand);
+        self.next_button_position = 1 - self.next_button_position;
+        self.hand_count = self.hand_count.saturating_add(1);
+        Ok(hand_id)
+    }
 }
