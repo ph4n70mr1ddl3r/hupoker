@@ -16,6 +16,11 @@ use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
 
 const DEFAULT_STACK_SIZE: u64 = 1500;
+const ALL_SEATS: &[u8; 2] = &[0, 1];
+/// Recommended channel bound for production use. Currently using unbounded for simplicity.
+/// TODO: Consider migrating to bounded channel with this capacity.
+#[allow(dead_code)]
+const RECOMMENDED_CHANNEL_BOUND: usize = 100;
 
 #[derive(Clone)]
 pub struct Server {
@@ -28,7 +33,7 @@ pub struct Server {
 impl Server {
     fn award_pots_to_winners(hand: &game_engine::Hand, winners: &[game_engine::Seat]) -> [u64; 2] {
         let button = hand.button_position;
-        let mut pots: Vec<(u64, &[u8])> = vec![(hand.pot.main, &[0, 1][..])];
+        let mut pots: Vec<(u64, &[u8])> = vec![(hand.pot.main, ALL_SEATS)];
         for side_pot in &hand.pot.side_pots {
             pots.push((side_pot.amount, &side_pot.eligible_seats));
         }
@@ -409,7 +414,11 @@ fn is_valid_version(version: &str) -> bool {
     if version.len() > 32 || version.is_empty() {
         return false;
     }
-    version.chars().all(|c| c.is_ascii_digit() || c == '.') && version.starts_with("1.")
+    let parts: Vec<&str> = version.split('.').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        return false;
+    }
+    parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())) && parts[0] == "1"
 }
 
 /// Handles a JoinTable message from a client.

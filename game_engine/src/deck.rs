@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 const DECK_SIZE: usize = 52;
 
-/// A shuffled 52‑card deck.
+/// A shuffled 52‑card deck using ChaCha12 RNG for reproducible shuffling.
+///
+/// The deck is created from a 32-byte seed, allowing for verifiable
+/// shuffles in audit scenarios.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Deck {
     cards: Vec<super::Card>,

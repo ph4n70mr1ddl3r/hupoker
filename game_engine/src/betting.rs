@@ -1,5 +1,8 @@
 use super::{ActionKind, ChipCount, Seat};
 
+/// Manages betting state for a single betting round in heads-up poker.
+///
+/// Tracks bets, stacks, all-in status, and determines when a betting round is complete.
 #[derive(Debug, Clone, Default)]
 pub struct Betting {
     bets: [ChipCount; 2],
@@ -34,6 +37,16 @@ pub enum BettingError {
 }
 
 impl Betting {
+    /// Creates a new betting round with blinds already posted.
+    ///
+    /// # Arguments
+    /// * `small_blind` - Small blind amount
+    /// * `big_blind` - Big blind amount
+    /// * `stacks` - Starting stacks for both players
+    /// * `button_position` - Seat of the button (posts small blind)
+    ///
+    /// # Errors
+    /// Returns an error if either player cannot afford their blind.
     pub fn new(
         small_blind: ChipCount,
         big_blind: ChipCount,
@@ -82,6 +95,8 @@ impl Betting {
         })
     }
 
+    /// Creates a new betting round for a new street (flop, turn, river).
+    /// No blinds are posted; betting starts fresh.
     pub fn new_street(big_blind: ChipCount, stacks: [ChipCount; 2], button_position: Seat) -> Self {
         Self {
             bets: [0, 0],
@@ -122,9 +137,18 @@ impl Betting {
     }
 
     /// Applies a player action.
-    /// `seat` must be the player whose turn it is.
-    /// `kind` and `amount` describe the action.
-    /// Returns updated betting state or an error.
+    ///
+    /// # Arguments
+    /// * `seat` - The player taking action (must be the acting player)
+    /// * `kind` - The type of action (Fold, Check, Call, Bet, Raise)
+    /// * `amount` - The amount for Bet/Call/Raise actions
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The betting round is already complete
+    /// - The action is illegal (e.g., checking when there's a bet)
+    /// - The player doesn't have enough chips
+    /// - The raise is below the minimum
     pub fn apply_action(
         &mut self,
         seat: Seat,
