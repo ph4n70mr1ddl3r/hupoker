@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-use super::{ChipCount, Hand, HandId, Player, Seat};
+use super::{ChipCount, Hand, HandError, HandId, Player, Seat};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TableId(String); // e.g., "table-1"
+pub struct TableId(String);
 
 impl TableId {
     pub fn new(s: String) -> Self {
@@ -29,6 +30,28 @@ pub struct TableConfig {
     pub starting_stack: ChipCount,
     pub action_timeout_secs: u64,
     pub reconnection_timeout_secs: u64,
+}
+
+#[derive(Debug, Error)]
+pub enum TableError {
+    #[error("invalid table config: {0}")]
+    InvalidConfig(String),
+    #[error("invalid next button position: {0}")]
+    InvalidButtonPosition(Seat),
+    #[error("player seat {0} does not match index {1}")]
+    SeatMismatch(Seat, usize),
+    #[error("current hand exists but not both seats occupied")]
+    HandWithoutPlayers,
+    #[error("seat {0} is sitting out but hand is in progress")]
+    SittingOutDuringHand(usize),
+    #[error("cannot start hand: both seats must be occupied")]
+    NotEnoughPlayers,
+    #[error("cannot start hand: a hand is already in progress")]
+    HandInProgress,
+    #[error("seat {0} should be occupied")]
+    SeatNotOccupied(usize),
+    #[error("hand error: {0}")]
+    HandError(#[from] HandError),
 }
 
 impl TableConfig {
@@ -59,7 +82,6 @@ impl TableConfig {
     }
 }
 
-/// A heads‑up poker table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Table {
     pub id: TableId,
@@ -74,21 +96,16 @@ pub struct Table {
 impl Table {
     pub fn validate(&self) -> Result<(), String> {
         self.config.validate()?;
-        // Validate next_button_position
         if !super::hand::seat_is_valid(self.next_button_position) {
             return Err(format!("invalid next_button_position {}", self.next_button_position));
         }
-        // hand_count can be any non-negative integer (u64)
-        // Ensure at most one player per seat
         for (i, seat) in self.seats.iter().enumerate() {
             if let Some(player) = seat {
                 if player.seat as usize != i {
                     return Err(format!("player seat {} does not match index {}", player.seat, i));
                 }
-                // Additional player validation could go here
             }
         }
-        // If current_hand is Some, both seats must be occupied and not sitting out
         if let Some(_hand) = &self.current_hand {
             if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
                 return Err("current_hand exists but not both seats occupied".to_string());
@@ -104,16 +121,16 @@ impl Table {
         Ok(())
     }
 
-    pub fn start_hand(&mut self, seed: [u8; 32]) -> Result<HandId, String> {
+    pub fn start_hand(&mut self, seed: [u8; 32]) -> Result<HandId, TableError> {
         if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
-            return Err("cannot start hand: both seats must be occupied".to_string());
+            return Err(TableError::NotEnoughPlayers);
         }
         if self.current_hand.is_some() {
-            return Err("cannot start hand: a hand is already in progress".to_string());
+            return Err(TableError::HandInProgress);
         }
         let player_stacks = [
-            self.seats[0].as_ref().map(|p| p.stack).ok_or("seat 0 should be occupied")?,
-            self.seats[1].as_ref().map(|p| p.stack).ok_or("seat 1 should be occupied")?,
+            self.seats[0].as_ref().map(|p| p.stack).ok_or(TableError::SeatNotOccupied(0))?,
+            self.seats[1].as_ref().map(|p| p.stack).ok_or(TableError::SeatNotOccupied(1))?,
         ];
         let button_position = self.next_button_position;
         let hand = Hand::deal(

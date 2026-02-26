@@ -1,16 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
-use super::{Action, Card, ChipCount, Pot};
+use super::{Action, ActionError, Card, ChipCount, Pot};
 
-/// Seat index at a heads-up poker table (0 or 1).
 pub type Seat = u8;
 
 const NUM_SEATS: u8 = 2;
 const HOLE_CARDS_PER_SEAT: usize = 2;
 
-/// Returns true if the seat index is valid for a heads-up table (0 or 1).
 pub fn seat_is_valid(seat: Seat) -> bool {
     seat < NUM_SEATS
 }
@@ -44,7 +43,30 @@ pub enum Street {
     Finished,
 }
 
-/// Represents a single poker hand (one deal).
+#[derive(Debug, Error)]
+pub enum HandError {
+    #[error("failed to post blinds: {0}")]
+    BlindsFailed(#[from] super::betting::BettingError),
+    #[error("invalid seat: {0}")]
+    InvalidSeat(Seat),
+    #[error("cannot advance street while betting round is incomplete")]
+    BettingIncomplete,
+    #[error("hand already finished")]
+    AlreadyFinished,
+    #[error("invalid button position: {0}")]
+    InvalidButtonPosition(Seat),
+    #[error("small blind ({0}) must be strictly less than big blind ({1})")]
+    InvalidBlinds(ChipCount, ChipCount),
+    #[error("hole_cards[{0}] length {1} != {2}")]
+    InvalidHoleCards(usize, usize, usize),
+    #[error("community_cards length {0} does not match street {1:?} (expected {2})")]
+    InvalidCommunityCards(usize, Street, usize),
+    #[error("pot validation failed: {0}")]
+    PotValidation(String),
+    #[error("action {0} invalid: {1}")]
+    InvalidAction(usize, ActionError),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hand {
     pub id: HandId,
@@ -53,13 +75,13 @@ pub struct Hand {
     pub betting: super::betting::Betting,
     pub small_blind: ChipCount,
     pub big_blind: ChipCount,
-    pub hole_cards: [Vec<Card>; 2], // index = seat
+    pub hole_cards: [Vec<Card>; 2],
     pub community_cards: Vec<Card>,
     pub pot: Pot,
     pub current_street: Street,
     pub actions: Vec<Action>,
     pub player_stacks: [ChipCount; 2],
-    pub button_position: Seat, // 0 or 1
+    pub button_position: Seat,
     pub last_action_time: Option<DateTime<Utc>>,
 }
 
@@ -70,11 +92,10 @@ impl Hand {
         button_position: Seat,
         player_stacks: [ChipCount; 2],
         seed: [u8; 32],
-    ) -> Result<Self, String> {
+    ) -> Result<Self, HandError> {
         let deck = super::Deck::new(seed);
         let betting =
-            super::betting::Betting::new(small_blind, big_blind, player_stacks, button_position)
-                .map_err(|e| format!("failed to post blinds: {}", e))?;
+            super::betting::Betting::new(small_blind, big_blind, player_stacks, button_position)?;
         let mut deck = deck;
         let mut hole_cards = [Vec::new(), Vec::new()];
         for _ in 0..HOLE_CARDS_PER_SEAT {
@@ -102,24 +123,19 @@ impl Hand {
         })
     }
 
-    pub fn advance_street(&mut self) -> Result<(), String> {
-        // Ensure betting round is complete
+    pub fn advance_street(&mut self) -> Result<(), HandError> {
         if !self.betting.is_round_complete() {
-            return Err("cannot advance street while betting round is incomplete".to_string());
+            return Err(HandError::BettingIncomplete);
         }
-        // Move betting pot to main pot
         self.pot.main = self.pot.main.saturating_add(self.betting.total_pot());
-        // Reset betting for next street with current stacks
         self.betting = super::betting::Betting::new_street(
             self.big_blind,
             self.betting.stacks(),
             self.button_position,
         );
         self.last_action_time = Some(Utc::now());
-        // Deal community cards based on street
         match self.current_street {
             Street::PreFlop => {
-                // Deal flop (3 cards)
                 for _ in 0..3 {
                     if let Some(card) = self.deck.draw() {
                         self.community_cards.push(card);
@@ -128,45 +144,38 @@ impl Hand {
                 self.current_street = Street::Flop;
             }
             Street::Flop => {
-                // Deal turn (1 card)
                 if let Some(card) = self.deck.draw() {
                     self.community_cards.push(card);
                 }
                 self.current_street = Street::Turn;
             }
             Street::Turn => {
-                // Deal river (1 card)
                 if let Some(card) = self.deck.draw() {
                     self.community_cards.push(card);
                 }
                 self.current_street = Street::River;
             }
             Street::River => {
-                // No more cards, move to showdown
                 self.current_street = Street::Showdown;
             }
             Street::Showdown => {
                 self.current_street = Street::Finished;
             }
             Street::Finished => {
-                return Err("hand already finished".to_string());
+                return Err(HandError::AlreadyFinished);
             }
         }
         Ok(())
     }
 
-    pub fn apply_action(&mut self, action: Action) -> Result<(), String> {
-        // Validate seat
+    pub fn apply_action(&mut self, action: Action) -> Result<(), HandError> {
         if !seat_is_valid(action.seat) {
-            return Err(format!("invalid seat {}", action.seat));
+            return Err(HandError::InvalidSeat(action.seat));
         }
-        // Apply via betting
         self.betting
             .apply_action(action.seat, action.kind, action.amount)
-            .map_err(|e| e.to_string())?;
-        // Record action
+            .map_err(HandError::BlindsFailed)?;
         self.actions.push(action);
-        // Update timestamp
         self.last_action_time = Some(Utc::now());
         Ok(())
     }
@@ -203,28 +212,18 @@ impl Hand {
         winners
     }
 
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), HandError> {
         if !seat_is_valid(self.button_position) {
-            return Err(format!("invalid button position {}", self.button_position));
+            return Err(HandError::InvalidButtonPosition(self.button_position));
         }
         if self.small_blind >= self.big_blind {
-            return Err(format!(
-                "small_blind ({}) must be strictly less than big_blind ({})",
-                self.small_blind, self.big_blind
-            ));
+            return Err(HandError::InvalidBlinds(self.small_blind, self.big_blind));
         }
-        // hole_cards must have exactly 2 cards per seat
         for (i, cards) in self.hole_cards.iter().enumerate() {
             if cards.len() != HOLE_CARDS_PER_SEAT {
-                return Err(format!(
-                    "hole_cards[{}] length {} != {}",
-                    i,
-                    cards.len(),
-                    HOLE_CARDS_PER_SEAT
-                ));
+                return Err(HandError::InvalidHoleCards(i, cards.len(), HOLE_CARDS_PER_SEAT));
             }
         }
-        // community_cards length must match street
         let expected_community = match self.current_street {
             Street::PreFlop => 0,
             Street::Flop => 3,
@@ -232,18 +231,15 @@ impl Hand {
             Street::River | Street::Showdown | Street::Finished => 5,
         };
         if self.community_cards.len() != expected_community {
-            return Err(format!(
-                "community_cards length {} does not match street {:?} (expected {})",
+            return Err(HandError::InvalidCommunityCards(
                 self.community_cards.len(),
                 self.current_street,
-                expected_community
+                expected_community,
             ));
         }
-        // pot validation
-        self.pot.validate()?;
-        // validate each action
+        self.pot.validate().map_err(HandError::PotValidation)?;
         for (i, action) in self.actions.iter().enumerate() {
-            action.validate().map_err(|e| format!("action {i} invalid: {e}"))?;
+            action.validate().map_err(|e| HandError::InvalidAction(i, e))?;
         }
         Ok(())
     }

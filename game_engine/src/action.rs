@@ -1,18 +1,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use super::Seat;
 
-/// A player’s decision.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Action {
     pub seat: Seat,
     pub kind: ActionKind,
-    pub amount: Option<u64>, // Some for bet/raise/call, None for fold/check
+    pub amount: Option<u64>,
     pub timestamp: DateTime<Utc>,
 }
 
-/// Possible kinds of poker actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionKind {
     Fold,
@@ -20,6 +19,18 @@ pub enum ActionKind {
     Call,
     Bet,
     Raise,
+}
+
+#[derive(Debug, Error)]
+pub enum ActionError {
+    #[error("invalid seat: {0}")]
+    InvalidSeat(Seat),
+    #[error("{0:?} must not have amount")]
+    UnexpectedAmount(ActionKind),
+    #[error("{0:?} must have amount")]
+    MissingAmount(ActionKind),
+    #[error("{0:?} amount must be positive")]
+    ZeroAmount(ActionKind),
 }
 
 impl std::fmt::Display for ActionKind {
@@ -35,24 +46,20 @@ impl std::fmt::Display for ActionKind {
 }
 
 impl Action {
-    /// Validates that the action is semantically correct.
-    ///
-    /// Returns `Ok(())` if valid, otherwise an error string.
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), ActionError> {
         if !super::hand::seat_is_valid(self.seat) {
-            return Err(format!("invalid seat {}", self.seat));
+            return Err(ActionError::InvalidSeat(self.seat));
         }
         match self.kind {
             ActionKind::Fold | ActionKind::Check => {
                 if self.amount.is_some() {
-                    return Err(format!("{:?} must not have amount", self.kind));
+                    return Err(ActionError::UnexpectedAmount(self.kind));
                 }
             }
             ActionKind::Call | ActionKind::Bet | ActionKind::Raise => {
-                let amount =
-                    self.amount.ok_or_else(|| format!("{:?} must have amount", self.kind))?;
+                let amount = self.amount.ok_or(ActionError::MissingAmount(self.kind))?;
                 if amount == 0 {
-                    return Err(format!("{:?} amount must be positive", self.kind));
+                    return Err(ActionError::ZeroAmount(self.kind));
                 }
             }
         }

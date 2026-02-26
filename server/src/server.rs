@@ -370,9 +370,6 @@ impl Server {
     }
 }
 
-/// Handles the initial handshake protocol with a connecting client.
-/// Reads ClientHello, validates version, and sends ServerHello.
-/// Returns Ok(true) if handshake succeeded, Ok(false) if client should be disconnected.
 async fn handle_handshake(
     reader: &mut tokio::io::BufReader<tokio::io::ReadHalf<TcpStream>>,
     writer: &mut tokio::io::BufWriter<tokio::io::WriteHalf<TcpStream>>,
@@ -382,7 +379,6 @@ async fn handle_handshake(
     use tokio::io::AsyncWriteExt;
     use tracing::{debug, warn};
 
-    // Step 1: read ClientHello
     let client_hello: Message = read_message(reader).await?;
     debug!("received {:?}", client_hello);
     let version = match client_hello {
@@ -392,12 +388,10 @@ async fn handle_handshake(
             return Ok(false);
         }
     };
-    // Validate version (simple check: major version == 1)
-    if !version.starts_with("1.") {
+    if !is_valid_version(&version) {
         warn!("unsupported version {}, expected 1.x", version);
         return Ok(false);
     }
-    // Send ServerHello accepting the connection
     let server_hello = Message::ServerHello {
         version: PROTOCOL_VERSION.to_string(),
         status: "accepted".to_string(),
@@ -408,6 +402,14 @@ async fn handle_handshake(
     writer.flush().await?;
     debug!("sent ServerHello");
     Ok(true)
+}
+
+fn is_valid_version(version: &str) -> bool {
+    let version = version.trim();
+    if version.len() > 32 || version.is_empty() {
+        return false;
+    }
+    version.chars().all(|c| c.is_ascii_digit() || c == '.') && version.starts_with("1.")
 }
 
 /// Handles a JoinTable message from a client.
@@ -719,7 +721,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 // Apply action
                 if let Err(e) = hand.apply_action(action.clone()) {
                     drop(tm);
-                    let error = Server::make_error_msg("illegal_action", &e, "action");
+                    let error = Server::make_error_msg("illegal_action", &e.to_string(), "action");
                     if tx.send(error).is_err() {
                         server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());

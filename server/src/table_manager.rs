@@ -78,7 +78,7 @@ impl TableManager {
     /// Returns the new HandId on success.
     pub fn start_hand(&mut self, table_id: &TableId, seed: [u8; 32]) -> Result<HandId, String> {
         let table = self.get_table_mut(table_id).ok_or_else(|| "table not found".to_string())?;
-        table.start_hand(seed)
+        table.start_hand(seed).map_err(|e| e.to_string())
     }
 
     /// Mark a player as disconnected at the given seat.
