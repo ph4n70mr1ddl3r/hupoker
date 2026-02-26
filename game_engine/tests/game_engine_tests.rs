@@ -52,9 +52,9 @@ fn hand_advance_street() {
     assert_eq!(hand.current_street, game_engine::Street::Flop);
     assert_eq!(hand.community_cards.len(), 3);
     let check_action1 =
-        Action { seat: 0, kind: ActionKind::Check, amount: None, timestamp: Utc::now() };
-    let check_action2 =
         Action { seat: 1, kind: ActionKind::Check, amount: None, timestamp: Utc::now() };
+    let check_action2 =
+        Action { seat: 0, kind: ActionKind::Check, amount: None, timestamp: Utc::now() };
     hand.apply_action(check_action1).unwrap();
     hand.apply_action(check_action2).unwrap();
     assert!(hand.betting.is_round_complete());
@@ -140,4 +140,88 @@ fn betting_cannot_check_with_bet_pending() {
     });
 
     assert!(result.is_err());
+}
+
+#[test]
+fn betting_turn_validation_rejects_out_of_turn() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(0));
+
+    let result = hand.apply_action(Action {
+        seat: 1,
+        kind: ActionKind::Call,
+        amount: Some(20),
+        timestamp: Utc::now(),
+    });
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("out of turn"));
+}
+
+#[test]
+fn stack_synchronization_after_action() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
+
+    let initial_stacks = hand.player_stacks;
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Call,
+        amount: Some(10),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert_ne!(hand.player_stacks[0], initial_stacks[0]);
+    assert_eq!(hand.player_stacks[0], hand.betting.stacks()[0]);
+}
+
+#[test]
+fn pot_accumulation_is_correct() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [1500, 1500], seed).unwrap();
+
+    assert_eq!(hand.betting.total_pot(), 30);
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Call,
+        amount: Some(10),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+    hand.apply_action(Action {
+        seat: 1,
+        kind: ActionKind::Check,
+        amount: None,
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert!(hand.betting.is_round_complete());
+    hand.advance_street().unwrap();
+
+    assert_eq!(hand.pot.main, 40);
+}
+
+#[test]
+fn all_in_with_short_stack() {
+    let seed = [0u8; 32];
+    let mut hand = Hand::deal(10, 20, 0, [50, 1500], seed).unwrap();
+
+    assert_eq!(hand.betting.acting_seat(), Some(0));
+
+    hand.apply_action(Action {
+        seat: 0,
+        kind: ActionKind::Raise,
+        amount: Some(40),
+        timestamp: Utc::now(),
+    })
+    .unwrap();
+
+    assert_eq!(hand.betting.stacks()[0], 0);
 }

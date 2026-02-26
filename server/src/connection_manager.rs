@@ -8,7 +8,7 @@ use crate::protocol::messages::Message;
 use game_engine::{Seat, TableId};
 
 /// Sender for sending messages to a specific connection.
-pub type ConnectionSender = mpsc::UnboundedSender<Message>;
+pub type ConnectionSender = mpsc::Sender<Message>;
 
 /// Inner state of the connection manager, protected by a mutex.
 struct ConnectionManagerInner {
@@ -50,7 +50,7 @@ impl ConnectionManager {
             inner.connections.get(&key).cloned()
         };
         if let Some(tx) = tx {
-            if tx.send(msg).is_err() {
+            if tx.try_send(msg).is_err() {
                 // Sender is closed, remove it from the map
                 let mut inner = self.inner.lock().await;
                 let key = (table_id.clone(), seat);
@@ -86,7 +86,7 @@ impl ConnectionManager {
         let mut broken_seats = Vec::new();
         for (seat, tx) in senders {
             let msg = msg_factory(seat);
-            if tx.send(msg).is_err() {
+            if tx.try_send(msg).is_err() {
                 broken_seats.push(seat);
                 warn!("failed to broadcast to seat {} at table {}", seat, table_id.as_str());
             }

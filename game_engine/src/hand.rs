@@ -114,7 +114,7 @@ impl Hand {
                 }
             }
         }
-        let pot = super::Pot { main: betting.total_pot(), side_pots: Vec::new() };
+        let pot = super::Pot { main: 0, side_pots: Vec::new() };
         Ok(Self {
             id: HandId(Uuid::new_v4()),
             deck,
@@ -184,6 +184,7 @@ impl Hand {
         self.betting
             .apply_action(action.seat, action.kind, action.amount)
             .map_err(HandError::BlindsFailed)?;
+        self.player_stacks = self.betting.stacks();
         self.actions.push(action);
         self.last_action_time = Some(Utc::now());
         Ok(())

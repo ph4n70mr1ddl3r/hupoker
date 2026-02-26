@@ -37,14 +37,14 @@ fn full_hand_simulation_checkdown() {
     assert_eq!(hand.community_cards.len(), 3);
 
     hand.apply_action(Action {
-        seat: 0,
+        seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
     })
     .expect("check should succeed");
     hand.apply_action(Action {
-        seat: 1,
+        seat: 0,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
@@ -56,14 +56,14 @@ fn full_hand_simulation_checkdown() {
     assert_eq!(hand.community_cards.len(), 4);
 
     hand.apply_action(Action {
-        seat: 0,
+        seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
     })
     .expect("check should succeed");
     hand.apply_action(Action {
-        seat: 1,
+        seat: 0,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
@@ -75,14 +75,14 @@ fn full_hand_simulation_checkdown() {
     assert_eq!(hand.community_cards.len(), 5);
 
     hand.apply_action(Action {
-        seat: 0,
+        seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
     })
     .expect("check should succeed");
     hand.apply_action(Action {
-        seat: 1,
+        seat: 0,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
@@ -138,14 +138,14 @@ fn full_hand_simulation_bet_call() {
     hand.advance_street().expect("advance to flop");
     assert_eq!(hand.current_street, Street::Flop);
     hand.apply_action(Action {
-        seat: 0,
+        seat: 1,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),
     })
     .expect("check");
     hand.apply_action(Action {
-        seat: 1,
+        seat: 0,
         kind: ActionKind::Check,
         amount: None,
         timestamp: Utc::now(),

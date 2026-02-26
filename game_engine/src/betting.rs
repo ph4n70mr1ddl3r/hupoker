@@ -158,6 +158,9 @@ impl Betting {
         if self.round_complete {
             return Err(BettingError::RoundComplete);
         }
+        if self.acting_seat() != Some(seat) {
+            return Err(BettingError::OutOfTurn(self.acting_seat().unwrap_or(0)));
+        }
         match kind {
             ActionKind::Fold => {
                 // Fold ends the hand immediately; betting round complete.

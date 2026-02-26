@@ -442,7 +442,7 @@ async fn handle_join_table(
             message: format!("seat must be between 0 and {}", NUM_SEATS - 1),
             original_type: "join_table".to_string(),
         };
-        if tx.send(error).is_err() {
+        if tx.try_send(error).is_err() {
             server.cleanup_connection(current_table.as_ref(), *current_seat).await;
         }
         // Close connection after sending error
@@ -506,7 +506,7 @@ async fn handle_join_table(
                 config,
                 current_hand_id,
             };
-            if tx.send(table_state).is_err() {
+            if tx.try_send(table_state).is_err() {
                 server.cleanup_connection(current_table.as_ref(), *current_seat).await;
                 return false;
             }
@@ -533,7 +533,7 @@ async fn handle_join_table(
                 }
             };
             if let Some(msg) = hand_state_msg {
-                if tx.send(msg).is_err() {
+                if tx.try_send(msg).is_err() {
                     server.cleanup_connection(current_table.as_ref(), *current_seat).await;
                     return false;
                 }
@@ -546,7 +546,7 @@ async fn handle_join_table(
                 message: e,
                 original_type: "join_table".to_string(),
             };
-            if tx.send(error).is_err() {
+            if tx.try_send(error).is_err() {
                 server.cleanup_connection(current_table.as_ref(), *current_seat).await;
                 return false;
             }
@@ -576,7 +576,7 @@ async fn handle_heartbeat(
         version: PROTOCOL_VERSION.to_string(),
         timestamp: Utc::now().to_rfc3339(),
     };
-    if tx.send(heartbeat).is_err() {
+    if tx.try_send(heartbeat).is_err() {
         server.cleanup_connection(current_table.as_ref(), current_seat).await;
         false
     } else {
@@ -602,10 +602,8 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
         return Ok(());
     }
 
-    // Create channel for outgoing messages
-    // Note: Bounded channel would require async send throughout the handler functions.
-    // Current design uses unbounded for simplicity; consider bounded channel (e.g., 100) for production.
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    // Create bounded channel for outgoing messages (100 msg buffer for backpressure)
+    let (tx, mut rx) = mpsc::channel(100);
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if let Err(e) = write_message(&mut writer, &msg).await {
@@ -666,7 +664,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             "must join a table before acting",
                             "action",
                         );
-                        if tx.send(error).is_err() {
+                        if tx.try_send(error).is_err() {
                             server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
@@ -684,7 +682,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             "table no longer exists",
                             "action",
                         );
-                        if tx.send(error).is_err() {
+                        if tx.try_send(error).is_err() {
                             server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
@@ -700,7 +698,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                             "hand not found or not active",
                             "action",
                         );
-                        if tx.send(error).is_err() {
+                        if tx.try_send(error).is_err() {
                             server.cleanup_connection(current_table.as_ref(), current_seat).await;
                             break Ok(());
                         }
@@ -716,7 +714,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         "it is not your turn to act",
                         "action",
                     );
-                    if tx.send(error).is_err() {
+                    if tx.try_send(error).is_err() {
                         server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());
                     }
@@ -728,7 +726,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                 if let Err(e) = hand.apply_action(action.clone()) {
                     drop(tm);
                     let error = Server::make_error_msg("illegal_action", &e.to_string(), "action");
-                    if tx.send(error).is_err() {
+                    if tx.try_send(error).is_err() {
                         server.cleanup_connection(current_table.as_ref(), current_seat).await;
                         break Ok(());
                     }
@@ -865,7 +863,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                     "message not allowed in current state",
                     "unknown",
                 );
-                if tx.send(error).is_err() {
+                if tx.try_send(error).is_err() {
                     server.cleanup_connection(current_table.as_ref(), current_seat).await;
                     break Ok(());
                 }
