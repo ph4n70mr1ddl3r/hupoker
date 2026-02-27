@@ -453,7 +453,11 @@ fn is_valid_version(version: &str) -> bool {
 
 fn is_valid_client_string(s: &str) -> bool {
     s.len() <= 64
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && s.chars().all(|c| {
+            c.is_ascii()
+                && !c.is_control()
+                && (c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        })
 }
 
 /// Handles a JoinTable message from a client.

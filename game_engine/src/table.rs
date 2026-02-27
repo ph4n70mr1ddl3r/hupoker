@@ -133,6 +133,7 @@ impl Table {
         Ok(())
     }
 
+    #[must_use = "start_hand() returns a Result that must be handled"]
     pub fn start_hand(&mut self, seed: [u8; 32]) -> Result<HandId, TableError> {
         if self.seats.iter().filter_map(|s| s.as_ref()).count() != 2 {
             return Err(TableError::NotEnoughPlayers);

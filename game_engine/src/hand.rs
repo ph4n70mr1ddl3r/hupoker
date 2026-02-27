@@ -97,6 +97,7 @@ pub struct Hand {
 }
 
 impl Hand {
+    #[must_use = "deal() returns a Result that must be handled"]
     pub fn deal(
         small_blind: ChipCount,
         big_blind: ChipCount,

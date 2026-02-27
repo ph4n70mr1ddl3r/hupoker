@@ -85,7 +85,7 @@ fn is_straight(cards: &[Card]) -> bool {
         if present {
             consecutive += 1;
         } else {
-            return false;
+            consecutive = 0;
         }
     }
     consecutive >= HAND_SIZE
