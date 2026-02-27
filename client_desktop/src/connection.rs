@@ -7,6 +7,7 @@ use tokio::time::{timeout, Duration};
 use tracing::debug;
 
 const READ_TIMEOUT_SECS: u64 = 30;
+const CONNECT_TIMEOUT_SECS: u64 = 5;
 
 pub struct Connection {
     reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
@@ -15,7 +16,10 @@ pub struct Connection {
 
 impl Connection {
     pub async fn connect(addr: &str) -> Result<Self> {
-        let stream = TcpStream::connect(addr).await?;
+        let stream = timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS), TcpStream::connect(addr))
+            .await
+            .context("connection timeout")?
+            .context("failed to connect")?;
         let (read_half, write_half) = stream.into_split();
         let reader = BufReader::new(read_half);
         let writer = BufWriter::new(write_half);

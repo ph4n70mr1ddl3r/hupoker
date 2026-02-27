@@ -63,8 +63,11 @@ impl AuditLog {
     pub fn log_event(&mut self, event: AuditEvent) -> Result<()> {
         let json = serde_json::to_string(&event).context("failed to serialize audit event")?;
         writeln!(self.writer, "{json}").context("failed to write audit log")?;
-        self.writer.flush()?;
         Ok(())
+    }
+
+    pub fn flush(&mut self) -> Result<()> {
+        self.writer.flush().context("failed to flush audit log")
     }
 
     pub fn log_seed(&mut self, hand_id: HandId, table_id: &TableId, seed: &[u8; 32]) -> Result<()> {
@@ -92,7 +95,8 @@ impl AuditLog {
             nonce,
             timestamp: Utc::now(),
         };
-        self.log_event(event)
+        self.log_event(event)?;
+        self.flush()
     }
 
     pub fn log_action(
@@ -126,7 +130,8 @@ impl AuditLog {
             pot_amount,
             timestamp: Utc::now(),
         };
-        self.log_event(event)
+        self.log_event(event)?;
+        self.flush()
     }
 
     pub fn encrypt_seed(seed: [u8; 32], key: &[u8; 32]) -> Result<String> {

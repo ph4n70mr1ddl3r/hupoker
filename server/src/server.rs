@@ -12,11 +12,12 @@ use game_engine::{Action, ActionKind, ServerConfig, Street};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, timeout, Duration};
 use tracing::{error, info, warn};
 
 const DEFAULT_STACK_SIZE: u64 = 1500;
 const ALL_SEATS: &[u8; 2] = &[0, 1];
+const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone)]
 pub struct Server {
@@ -395,10 +396,15 @@ async fn handle_handshake(
 ) -> Result<bool> {
     use crate::protocol::codec::{read_message, write_message};
     use crate::protocol::messages::Message;
+    use anyhow::Context;
     use tokio::io::AsyncWriteExt;
     use tracing::{debug, warn};
 
-    let client_hello: Message = read_message(reader).await?;
+    let client_hello: Message =
+        timeout(Duration::from_secs(HANDSHAKE_TIMEOUT_SECS), read_message(reader))
+            .await
+            .context("handshake timeout")?
+            .context("failed to read handshake")?;
     debug!("received {:?}", client_hello);
     let (version, client_name, client_version) = match client_hello {
         Message::ClientHello { version, client_name, client_version } => {

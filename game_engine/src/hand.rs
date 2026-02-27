@@ -218,7 +218,10 @@ impl Hand {
         let mut folded = [false, false];
         for action in &self.actions {
             if action.kind == super::ActionKind::Fold {
-                folded[action.seat as usize] = true;
+                let seat_idx = action.seat as usize;
+                if seat_idx < folded.len() {
+                    folded[seat_idx] = true;
+                }
             }
         }
         let active_seats: Vec<Seat> =
