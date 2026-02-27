@@ -278,10 +278,11 @@ impl TableView {
             let is_my_turn = self.acting_seat == Some(self.player_seat);
             ui.set_enabled(is_my_turn);
 
-            let my_bet = self.current_bets[self.player_seat as usize];
-            let opponent_bet = self.current_bets[1 - self.player_seat as usize];
+            let my_bet = self.current_bets.get(self.player_seat as usize).copied().unwrap_or(0);
+            let opponent_bet =
+                self.current_bets.get(1 - self.player_seat as usize).copied().unwrap_or(0);
             let call_amount = opponent_bet.saturating_sub(my_bet);
-            let my_stack = self.player_stacks[self.player_seat as usize];
+            let my_stack = self.player_stacks.get(self.player_seat as usize).copied().unwrap_or(0);
             let max_call = my_stack.min(call_amount);
 
             if ui.button("Fold").clicked() {

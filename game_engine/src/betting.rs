@@ -56,6 +56,12 @@ impl Betting {
         stacks: [ChipCount; 2],
         button_position: Seat,
     ) -> Result<Self, BettingError> {
+        if button_position > 1 {
+            return Err(BettingError::IllegalAction(format!(
+                "invalid button position: {}",
+                button_position
+            )));
+        }
         let small_blind_seat = button_position;
         let big_blind_seat = 1 - button_position;
 

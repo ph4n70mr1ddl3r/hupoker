@@ -50,7 +50,9 @@ impl Server {
                 if idx == 0 && remainder > 0 {
                     award = award.saturating_add(remainder);
                 }
-                awards[seat as usize] = awards[seat as usize].saturating_add(award);
+                if (seat as usize) < awards.len() {
+                    awards[seat as usize] = awards[seat as usize].saturating_add(award);
+                }
             }
         }
         awards
@@ -245,7 +247,7 @@ impl Server {
 
         // Broadcast updated hand state (fold action applied)
         let next_acting_seat = hand_clone.betting.acting_seat();
-        let time_remaining_ms = config.action_timeout_secs * MILLISECONDS_PER_SECOND;
+        let time_remaining_ms = config.action_timeout_secs.saturating_mul(MILLISECONDS_PER_SECOND);
         self.connection_manager
             .broadcast_to_table(&table_id, |player_seat| {
                 crate::hand_state::create_hand_state_message(
@@ -398,8 +400,10 @@ async fn handle_handshake(
 
     let client_hello: Message = read_message(reader).await?;
     debug!("received {:?}", client_hello);
-    let version = match client_hello {
-        Message::ClientHello { version, .. } => version,
+    let (version, client_name, client_version) = match client_hello {
+        Message::ClientHello { version, client_name, client_version } => {
+            (version, client_name, client_version)
+        }
         _ => {
             warn!("first message not ClientHello, got: {:?}", client_hello);
             return Ok(false);
@@ -407,6 +411,14 @@ async fn handle_handshake(
     };
     if !is_valid_version(&version) {
         warn!("unsupported version {}, expected 1.x", version);
+        return Ok(false);
+    }
+    if !is_valid_client_string(&client_name) {
+        warn!("invalid client_name: {:?}", client_name);
+        return Ok(false);
+    }
+    if !is_valid_client_string(&client_version) {
+        warn!("invalid client_version: {:?}", client_version);
         return Ok(false);
     }
     let server_hello = Message::ServerHello {
@@ -430,7 +442,12 @@ fn is_valid_version(version: &str) -> bool {
     if parts.len() < 2 || parts.len() > 3 {
         return false;
     }
-    parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())) && parts[0] == "1"
+    parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) && parts[0] == "1"
+}
+
+fn is_valid_client_string(s: &str) -> bool {
+    s.len() <= 64
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 /// Handles a JoinTable message from a client.
@@ -531,8 +548,10 @@ async fn handle_join_table(
                 let tm = server.table_manager.lock().await;
                 if let Some(table) = tm.get_table(&table_id) {
                     if let Some(hand) = &table.current_hand {
-                        let time_remaining_ms =
-                            table.config.action_timeout_secs * MILLISECONDS_PER_SECOND;
+                        let time_remaining_ms = table
+                            .config
+                            .action_timeout_secs
+                            .saturating_mul(MILLISECONDS_PER_SECOND);
                         let acting_seat = hand.betting.acting_seat();
                         Some(create_hand_state_message(
                             hand,
@@ -828,7 +847,7 @@ async fn handle_connection(stream: TcpStream, server: Server) -> Result<()> {
                         drop(tm);
                         let next_acting_seat = hand_clone.betting.acting_seat();
                         let time_remaining_ms =
-                            config.action_timeout_secs * MILLISECONDS_PER_SECOND;
+                            config.action_timeout_secs.saturating_mul(MILLISECONDS_PER_SECOND);
                         server
                             .connection_manager
                             .broadcast_to_table(&table_id, |player_seat| {

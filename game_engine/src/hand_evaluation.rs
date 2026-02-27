@@ -92,17 +92,26 @@ fn is_straight(cards: &[Card]) -> bool {
 }
 
 fn count_ranks(cards: &[Card]) -> Vec<(Rank, u8)> {
-    let mut counts = [0u8; 13];
+    let mut counts = [0u8; 15];
     for card in cards {
-        counts[card.rank.value() as usize - 2] += 1;
+        let idx = card.rank.value() as usize;
+        if (2..=14).contains(&idx) {
+            counts[idx - 2] += 1;
+        }
     }
     let mut result: Vec<(Rank, u8)> = cards
         .iter()
         .map(|c| c.rank)
-        .filter(|&r| counts[r.value() as usize - 2] > 0)
+        .filter(|&r| {
+            let idx = r.value() as usize;
+            (2..=14).contains(&idx) && counts[idx - 2] > 0
+        })
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
-        .map(|r| (r, counts[r.value() as usize - 2]))
+        .map(|r| {
+            let idx = r.value() as usize;
+            (r, if (2..=14).contains(&idx) { counts[idx - 2] } else { 0 })
+        })
         .collect();
     result.sort_by_key(|&(rank, count)| (count, rank.value()));
     result.reverse();

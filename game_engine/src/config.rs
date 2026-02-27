@@ -17,8 +17,15 @@ impl ServerConfig {
         if self.bind_address.is_empty() {
             return Err("bind_address must not be empty".to_string());
         }
-        // Simple validation: must contain ':'
-        if !self.bind_address.contains(':') {
+        if let Some(colon_pos) = self.bind_address.rfind(':') {
+            let port_str = &self.bind_address[colon_pos + 1..];
+            let port: u16 = port_str.parse().map_err(|_| {
+                format!("bind_address port must be a valid number (1-65535), got: {}", port_str)
+            })?;
+            if port == 0 {
+                return Err("bind_address port must be between 1 and 65535".to_string());
+            }
+        } else {
             return Err("bind_address must be in format 'host:port'".to_string());
         }
         if self.audit_log_path.as_os_str().is_empty() {
