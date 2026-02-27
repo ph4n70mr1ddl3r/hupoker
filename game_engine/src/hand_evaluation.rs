@@ -96,23 +96,19 @@ fn count_ranks(cards: &[Card]) -> Vec<(Rank, u8)> {
     for card in cards {
         let idx = card.rank.value() as usize;
         if (2..=14).contains(&idx) {
-            counts[idx - 2] += 1;
+            counts[idx] += 1;
         }
     }
-    let mut result: Vec<(Rank, u8)> = cards
-        .iter()
-        .map(|c| c.rank)
-        .filter(|&r| {
-            let idx = r.value() as usize;
-            (2..=14).contains(&idx) && counts[idx - 2] > 0
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .map(|r| {
-            let idx = r.value() as usize;
-            (r, if (2..=14).contains(&idx) { counts[idx - 2] } else { 0 })
-        })
-        .collect();
+    let mut result: Vec<(Rank, u8)> = Vec::with_capacity(13);
+    for &card in cards {
+        let idx = card.rank.value() as usize;
+        if (2..=14).contains(&idx) && counts[idx] > 0 {
+            let rank = card.rank;
+            let count = counts[idx];
+            counts[idx] = 0;
+            result.push((rank, count));
+        }
+    }
     result.sort_by_key(|&(rank, count)| (count, rank.value()));
     result.reverse();
     result

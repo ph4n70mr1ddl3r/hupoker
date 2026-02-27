@@ -15,6 +15,7 @@ mod pot;
 mod table;
 
 pub type ChipCount = u64;
+pub const NUM_SEATS: usize = 2;
 
 pub use action::{Action, ActionError, ActionKind};
 pub use betting::{Betting, BettingError};

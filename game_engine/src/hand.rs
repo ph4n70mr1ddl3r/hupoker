@@ -3,15 +3,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::{Action, ActionError, Card, ChipCount, Pot};
+use super::{Action, ActionError, Card, ChipCount, Pot, NUM_SEATS};
 
 pub type Seat = u8;
 
-const NUM_SEATS: u8 = 2;
 const HOLE_CARDS_PER_SEAT: usize = 2;
 
 pub fn seat_is_valid(seat: Seat) -> bool {
-    seat < NUM_SEATS
+    (seat as usize) < NUM_SEATS
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -215,17 +214,17 @@ impl Hand {
     }
 
     pub fn evaluate_winner(&self) -> Vec<Seat> {
-        let mut folded = [false, false];
+        let mut folded = [false; NUM_SEATS];
         for action in &self.actions {
             if action.kind == super::ActionKind::Fold {
                 let seat_idx = action.seat as usize;
-                if seat_idx < folded.len() {
+                if seat_idx < NUM_SEATS {
                     folded[seat_idx] = true;
                 }
             }
         }
         let active_seats: Vec<Seat> =
-            (0..NUM_SEATS as usize).filter(|&i| !folded[i]).map(|i| i as Seat).collect();
+            (0..NUM_SEATS).filter(|&i| !folded[i]).map(|i| i as Seat).collect();
         if active_seats.is_empty() {
             return Vec::new();
         }

@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 use tracing::warn;
 
 use crate::protocol::messages::Message;
-use game_engine::{Seat, TableId};
+use game_engine::{Seat, TableId, NUM_SEATS};
 
 /// Sender for sending messages to a specific connection.
 pub type ConnectionSender = mpsc::Sender<Message>;
@@ -73,9 +73,8 @@ impl ConnectionManager {
         // Collect senders to broadcast to while holding the lock
         let senders: Vec<(Seat, ConnectionSender)> = {
             let inner = self.inner.lock().await;
-            [0, 1]
-                .iter()
-                .filter_map(|&seat| {
+            (0..NUM_SEATS as Seat)
+                .filter_map(|seat| {
                     let key = (table_id.clone(), seat);
                     inner.connections.get(&key).map(|tx| (seat, tx.clone()))
                 })

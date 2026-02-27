@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter,
+};
 use tracing::debug;
 
 const MAX_MESSAGE_SIZE: usize = 64 * 1024;
@@ -9,8 +11,12 @@ pub async fn read_message<T: DeserializeOwned, R: AsyncRead + Unpin>(
     stream: &mut BufReader<R>,
 ) -> Result<T> {
     let mut line = String::new();
-    let n = stream.read_line(&mut line).await.context("failed to read line")?;
-    if n >= MAX_MESSAGE_SIZE {
+    let n = stream
+        .take(MAX_MESSAGE_SIZE as u64 + 1)
+        .read_line(&mut line)
+        .await
+        .context("failed to read line")?;
+    if n > MAX_MESSAGE_SIZE {
         return Err(anyhow::anyhow!("message exceeds maximum size of {} bytes", MAX_MESSAGE_SIZE));
     }
     debug!("received line: {}", line.trim());

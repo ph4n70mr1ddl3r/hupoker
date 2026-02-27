@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use game_engine::{HandId, Player, Seat, Table, TableId};
+use game_engine::{HandId, Player, Seat, Table, TableId, NUM_SEATS};
 use std::collections::HashMap;
 
 pub struct TableManager {
@@ -32,8 +32,8 @@ impl TableManager {
         player: Player,
     ) -> Result<(), String> {
         let table = self.get_table_mut(table_id).ok_or_else(|| "table not found".to_string())?;
-        if seat >= 2 {
-            return Err("seat must be 0 or 1".to_string());
+        if seat as usize >= NUM_SEATS {
+            return Err(format!("seat must be 0..{}", NUM_SEATS - 1));
         }
         // Check if seat already occupied
         if let Some(existing_player) = &table.seats[seat as usize] {
@@ -96,7 +96,7 @@ impl TableManager {
     /// Mark a player as disconnected at the given seat.
     /// Returns true if the seat was occupied and the player was marked.
     pub fn mark_disconnected(&mut self, table_id: &TableId, seat: u8) -> bool {
-        if seat >= 2 {
+        if seat as usize >= NUM_SEATS {
             return false;
         }
         let table = match self.get_table_mut(table_id) {
