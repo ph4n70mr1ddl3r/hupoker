@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::runtime::Runtime;
 
+const RECONNECT_DELAY_SECS: u64 = 5;
+
 #[derive(Default)]
 pub struct ConnectionDialog {
     pub open: bool,
@@ -162,7 +164,6 @@ impl ConnectionDialog {
 
     fn attempt_reconnection(&mut self) {
         self.hand_state = None;
-        const RECONNECT_DELAY_SECS: u64 = 5;
         let now = Instant::now();
         if let Some(last) = self.last_reconnect_attempt {
             if now.duration_since(last).as_secs() < RECONNECT_DELAY_SECS {

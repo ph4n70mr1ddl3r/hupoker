@@ -1,3 +1,5 @@
+mod common;
+
 use anyhow::Result;
 use game_engine::{ServerConfig, TableConfig};
 use server::{audit_log::AuditLog, server::Server};
@@ -180,77 +182,12 @@ async fn reconnection_flow() -> Result<()> {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    // Helper to connect and join a seat, returns reader, writer, table_state JSON, and any hand_state messages received before table_state
-    async fn connect_and_join(
-        addr: std::net::SocketAddr,
-        seat: u8,
-    ) -> Result<(
-        BufReader<tokio::net::tcp::OwnedReadHalf>,
-        BufWriter<tokio::net::tcp::OwnedWriteHalf>,
-        serde_json::Value,
-        Vec<serde_json::Value>,
-    )> {
-        let stream = TcpStream::connect(addr).await?;
-        let (read_half, write_half) = stream.into_split();
-        let mut reader = BufReader::new(read_half);
-        let mut writer = BufWriter::new(write_half);
-
-        // Send ClientHello
-        let client_hello = serde_json::json!({
-            "type": "client_hello",
-            "version": "1.0",
-            "client_name": "test",
-            "client_version": "0.1.0"
-        });
-        let line = serde_json::to_string(&client_hello)? + "\n";
-        writer.write_all(line.as_bytes()).await?;
-        writer.flush().await?;
-
-        // Read ServerHello response
-        let mut response = String::new();
-        reader.read_line(&mut response).await?;
-        let server_hello: serde_json::Value = serde_json::from_str(&response)?;
-        assert_eq!(server_hello["type"], "server_hello");
-        assert_eq!(server_hello["status"], "accepted");
-
-        // Send JoinTable
-        let join_table = serde_json::json!({
-            "type": "join_table",
-            "version": "1.0",
-            "table_id": "table-0",
-            "seat": seat
-        });
-        let line = serde_json::to_string(&join_table)? + "\n";
-        writer.write_all(line.as_bytes()).await?;
-        writer.flush().await?;
-
-        // Read messages until we get a table_state response
-        let mut table_state = None;
-        let mut hand_states = Vec::new();
-        while table_state.is_none() {
-            let mut response = String::new();
-            reader.read_line(&mut response).await?;
-            eprintln!("DEBUG seat {}: received line: {}", seat, response.trim());
-            let msg: serde_json::Value = serde_json::from_str(&response)?;
-            match msg["type"].as_str() {
-                Some("table_state") => {
-                    assert_eq!(msg["table_id"], "table-0");
-                    table_state = Some(msg);
-                }
-                Some("hand_state") => {
-                    hand_states.push(msg);
-                }
-                _ => panic!("unexpected message type: {}", msg["type"]),
-            }
-        }
-
-        Ok((reader, writer, table_state.unwrap(), hand_states))
-    }
-
     // Connect player 0
-    let (mut reader0, _writer0, _table_state0, _hand_states0) = connect_and_join(addr, 0).await?;
+    let (mut reader0, _writer0, _table_state0, _hand_states0) =
+        common::connect_and_join(addr, 0).await?;
     // Connect player 1
-    let (mut reader1, writer1, _table_state1, _hand_states1) = connect_and_join(addr, 1).await?;
+    let (mut reader1, writer1, _table_state1, _hand_states1) =
+        common::connect_and_join(addr, 1).await?;
 
     // Wait for hand start (server automatically starts hand after both seats join)
     // Read HandState for player 0 (should receive)
@@ -273,7 +210,7 @@ async fn reconnection_flow() -> Result<()> {
 
     // Player 1 reconnects (new TCP connection) and joins same seat
     let (mut reader1_new, _writer1_new, table_state_reconn, hand_states_reconn) =
-        connect_and_join(addr, 1).await?;
+        common::connect_and_join(addr, 1).await?;
     // Seat 1 should have a player
     let seats = table_state_reconn["seats"].as_array().unwrap();
     assert!(seats[1]["player"].is_object());
@@ -299,72 +236,6 @@ async fn reconnection_flow() -> Result<()> {
 
 #[tokio::test]
 async fn action_timeout_auto_fold() -> Result<()> {
-    // Helper from reconnection_flow (copied)
-    async fn connect_and_join(
-        addr: std::net::SocketAddr,
-        seat: u8,
-    ) -> Result<(
-        tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
-        tokio::io::BufWriter<tokio::net::tcp::OwnedWriteHalf>,
-        serde_json::Value,
-        Vec<serde_json::Value>,
-    )> {
-        let stream = tokio::net::TcpStream::connect(addr).await?;
-        let (read_half, write_half) = stream.into_split();
-        let mut reader = tokio::io::BufReader::new(read_half);
-        let mut writer = tokio::io::BufWriter::new(write_half);
-
-        // Send ClientHello
-        let client_hello = serde_json::json!({
-            "type": "client_hello",
-            "version": "1.0",
-            "client_name": "test",
-            "client_version": "0.1.0"
-        });
-        let line = serde_json::to_string(&client_hello)? + "\n";
-        writer.write_all(line.as_bytes()).await?;
-        writer.flush().await?;
-
-        // Read ServerHello response
-        let mut response = String::new();
-        reader.read_line(&mut response).await?;
-        let server_hello: serde_json::Value = serde_json::from_str(&response)?;
-        assert_eq!(server_hello["type"], "server_hello");
-        assert_eq!(server_hello["status"], "accepted");
-
-        // Send JoinTable
-        let join_table = serde_json::json!({
-            "type": "join_table",
-            "version": "1.0",
-            "table_id": "table-0",
-            "seat": seat
-        });
-        let line = serde_json::to_string(&join_table)? + "\n";
-        writer.write_all(line.as_bytes()).await?;
-        writer.flush().await?;
-
-        // Read messages until we get a table_state response
-        let mut table_state = None;
-        let mut hand_states = Vec::new();
-        while table_state.is_none() {
-            let mut response = String::new();
-            reader.read_line(&mut response).await?;
-            let msg: serde_json::Value = serde_json::from_str(&response)?;
-            match msg["type"].as_str() {
-                Some("table_state") => {
-                    assert_eq!(msg["table_id"], "table-0");
-                    table_state = Some(msg);
-                }
-                Some("hand_state") => {
-                    hand_states.push(msg);
-                }
-                _ => panic!("unexpected message type: {}", msg["type"]),
-            }
-        }
-
-        Ok((reader, writer, table_state.unwrap(), hand_states))
-    }
-
     // Create a temporary listener to get a free port
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -395,9 +266,11 @@ async fn action_timeout_auto_fold() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Connect player 0
-    let (mut reader0, _writer0, _table_state0, hand_states0) = connect_and_join(addr, 0).await?;
+    let (mut reader0, _writer0, _table_state0, hand_states0) =
+        common::connect_and_join(addr, 0).await?;
     // Connect player 1
-    let (mut reader1, _writer1, _table_state1, hand_states1) = connect_and_join(addr, 1).await?;
+    let (mut reader1, _writer1, _table_state1, hand_states1) =
+        common::connect_and_join(addr, 1).await?;
 
     // Determine if hand already started (hand_states may contain initial HandState)
     // If not, read one HandState for each player
