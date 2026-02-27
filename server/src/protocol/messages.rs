@@ -75,38 +75,6 @@ pub struct TableSeat {
     pub player: Option<Player>,
 }
 
-/// Standalone structs for convenience when working with message contents.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClientHello {
-    pub client_name: String,
-    pub client_version: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JoinTable {
-    pub table_id: TableId,
-    pub seat: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionMessage {
-    pub hand_id: HandId,
-    pub kind: ActionKind,
-    pub amount: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Heartbeat {
-    pub timestamp: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerHello {
-    pub status: String,
-    pub server_name: String,
-    pub server_version: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableState {
     pub table_id: TableId,
@@ -130,16 +98,4 @@ pub struct HandState {
     pub last_action_time: String,
     pub acting_seat: Option<u8>,
     pub time_remaining_ms: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorMessage {
-    pub code: String,
-    pub message: String,
-    pub original_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Disconnected {
-    pub reason: String,
 }

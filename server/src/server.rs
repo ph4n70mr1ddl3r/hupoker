@@ -448,7 +448,8 @@ fn is_valid_version(version: &str) -> bool {
     if parts.len() < 2 || parts.len() > 3 {
         return false;
     }
-    parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())) && parts[0] == "1"
+    parts.iter().all(|p| !p.is_empty() && p.len() <= 5 && p.chars().all(|c| c.is_ascii_digit()))
+        && parts[0] == "1"
 }
 
 fn is_valid_client_string(s: &str) -> bool {
