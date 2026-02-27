@@ -191,7 +191,12 @@ impl Betting {
             ActionKind::Call => {
                 let call_amount = self.amount_to_call(seat);
                 if call_amount == 0 {
-                    // Essentially a check
+                    if amount.is_some() && amount != Some(0) {
+                        return Err(BettingError::IllegalAction(
+                            "cannot call with amount when no bet to call (use check instead)"
+                                .to_string(),
+                        ));
+                    }
                     self.mark_action(seat);
                     return Ok(());
                 }

@@ -75,6 +75,8 @@ pub enum HandError {
     PotValidation(String),
     #[error("action {0} invalid: {1}")]
     InvalidAction(usize, ActionError),
+    #[error("deck exhausted: could not draw {0} card(s) for {1:?}")]
+    DeckExhausted(usize, Street),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,21 +167,24 @@ impl Hand {
         match self.current_street {
             Street::PreFlop => {
                 for _ in 0..3 {
-                    if let Some(card) = self.deck.draw() {
-                        self.community_cards.push(card);
+                    match self.deck.draw() {
+                        Some(card) => self.community_cards.push(card),
+                        None => return Err(HandError::DeckExhausted(3, Street::Flop)),
                     }
                 }
                 self.current_street = Street::Flop;
             }
             Street::Flop => {
-                if let Some(card) = self.deck.draw() {
-                    self.community_cards.push(card);
+                match self.deck.draw() {
+                    Some(card) => self.community_cards.push(card),
+                    None => return Err(HandError::DeckExhausted(1, Street::Turn)),
                 }
                 self.current_street = Street::Turn;
             }
             Street::Turn => {
-                if let Some(card) = self.deck.draw() {
-                    self.community_cards.push(card);
+                match self.deck.draw() {
+                    Some(card) => self.community_cards.push(card),
+                    None => return Err(HandError::DeckExhausted(1, Street::River)),
                 }
                 self.current_street = Street::River;
             }
